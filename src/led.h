@@ -9,11 +9,19 @@
 #define LED_H_
 
 #include "stm32f0xx_hal.h"
+#include <vector>
+#include <algorithm>
+
+enum class LampStyle
+	: unsigned short {
+		LED = 1, INCANDESCENT = 2, SEARCHLIGHT = 3,
+};
 
 class LED {
 public:
 	LED(GPIO_TypeDef* gpio_port, uint16_t gpio_pin) :
-			gpio_port_(gpio_port), gpio_pin_(gpio_pin) {}
+			gpio_port_(gpio_port), gpio_pin_(gpio_pin) {
+	}
 
 	inline void init() {
 		GPIO_InitTypeDef GPIO_InitStructure;
@@ -29,18 +37,148 @@ public:
 		turnOff();
 	}
 
-	inline void __attribute__((always_inline)) turnOn() {
-		HAL_GPIO_WritePin(gpio_port_, gpio_pin_, GPIO_PIN_SET);
+	void turnOn() {
+		on_ = true;
 	}
 
-	inline void __attribute__((always_inline)) turnOff() {
-		HAL_GPIO_WritePin(gpio_port_, gpio_pin_, GPIO_PIN_RESET);
-
+	void turnOff() {
+		on_ = false;
 	}
+
+	void update_state() {
+		HAL_GPIO_WritePin(gpio_port_, gpio_pin_,
+				on_ ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	}
+
 private:
-	/*global*/ GPIO_TypeDef* gpio_port_;
+	/*global*/
+	GPIO_TypeDef* gpio_port_;
 	const uint16_t gpio_pin_;
+	bool on_ = 0;
 };
 
+class AnimationFunction {
+public:
+	virtual ~AnimationFunction() = default;
+	virtual float get_value(float msec) const = 0;
+};
+
+class SquareFunction: public AnimationFunction {
+public:
+	SquareFunction(bool is_onward) :
+			is_onward_(is_onward) {
+	}
+
+	float get_value(float msec) const override {
+		return is_onward_ ? 1.0 : 0.0;
+	}
+
+private:
+	bool is_onward_ = true;
+};
+
+class FadeFn: public AnimationFunction {
+public:
+	FadeFn(bool onward) :
+			onward_(onward) {
+	}
+	float get_value(float msec) const override {
+		// .5 second fade
+		float frac = std::min(msec / 500, 1.0f);
+		if (onward_) {
+			return frac;
+		} else {
+			return 1.0 - frac;
+		}
+	}
+private:
+	bool onward_ = true;
+};
+
+static SquareFunction* LED_ON_ANIMATION = new SquareFunction(
+/*is_onward=*/true);
+static SquareFunction* LED_OFF_ANIMATION = new SquareFunction(
+/*is_onward=*/false);
+
+static FadeFn* FADE_ON_ANIMATION = new FadeFn(true);
+static FadeFn* FADE_OFF_ANIMATION = new FadeFn(false);
+
+class DimmableLED: public LED {
+public:
+	DimmableLED(GPIO_TypeDef* gpio_port, uint16_t gpio_pin) :
+			LED(gpio_port, gpio_pin) {
+	}
+
+	// 0 to 255.
+	void set_brightness_level(unsigned short brightness) {
+		brightness_ = brightness;
+	}
+
+	// Call this at PWM frequency.
+	void compute_pwm_state() {
+		if (++counter_ >= 255) {
+			counter_ = 0;
+		}
+		if (counter_ > brightness_) {
+			LED::turnOff();
+		} else {
+			LED::turnOn();
+		}
+	}
+
+private:
+	unsigned short brightness_ = 255;
+	unsigned short counter_ = 0;
+};
+
+class AnimatedLED: public DimmableLED {
+public:
+	AnimatedLED(GPIO_TypeDef* gpio_port, uint16_t gpio_pin, LampStyle style =
+			LampStyle::INCANDESCENT) :
+			DimmableLED(gpio_port, gpio_pin) {
+		setStyle(style);
+	}
+
+	void animate_on() {
+		current_fn_ = on_fn_;
+		animation_start_ = HAL_GetTick();
+	}
+
+	void animate_off() {
+		current_fn_ = off_fn_;
+		animation_start_ = HAL_GetTick();
+	}
+
+	void setStyle(LampStyle style) {
+		switch (style) {
+		case LampStyle::INCANDESCENT:
+			on_fn_ = FADE_ON_ANIMATION;
+			off_fn_ = FADE_OFF_ANIMATION;
+			break;
+		case LampStyle::LED:
+		default:
+			on_fn_ = LED_ON_ANIMATION;
+			off_fn_ = LED_OFF_ANIMATION;
+			break;
+		}
+	}
+
+	void compute_animation_state() {
+		if (!current_fn_ || animation_start_ == 0) {
+			return;
+		}
+		uint32_t msec_elapsed = HAL_GetTick() - animation_start_;
+		if (msec_elapsed > 1100) {
+			current_fn_ = nullptr;
+			return;
+		}
+		set_brightness_level(current_fn_->get_value(msec_elapsed) * 255.0);
+	}
+
+private:
+	AnimationFunction *on_fn_, *off_fn_;
+	AnimationFunction* current_fn_ = nullptr;
+	uint32_t animation_start_ = 0;
+};
 
 #endif /* LED_H_ */

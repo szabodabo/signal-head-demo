@@ -4,30 +4,26 @@
 #include <vector>
 
 ADC_HandleTypeDef hadc;
-TIM_HandleTypeDef htim1, htim6;
+TIM_HandleTypeDef htim1, htim6, htim7;
 
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_ADC_Init(void);
 static void User_Btn_Timer_Init();
+static void AnimationStepTimerInit();
 
 #define BTN_PRESSED_THRESHOLD_PERIODS 15  // 1.5 seconds
 #define ASPECT_ROTATE_PERIODS 25  // 2.5 seconds
 
-enum class LampStyle : unsigned short {
-	LED = 1,
-	INCANDESCENT = 2,
-	SEARCHLIGHT = 3,
-};
-
 volatile int BTN_PRESSED_NUM_PERIODS = 0;
 volatile int NUM_PERIODS_SINCE_LAST_ROTATE = 0;
-static std::vector<LED>* LEDS = new std::vector<LED>{
-		LED(GPIOC, GPIO_PIN_3),
-		LED(GPIOC, GPIO_PIN_1),
-		LED(GPIOC, GPIO_PIN_0),
+static std::vector<AnimatedLED>* LEDS = new std::vector<AnimatedLED>{
+		AnimatedLED(GPIOC, GPIO_PIN_3),
+		AnimatedLED(GPIOC, GPIO_PIN_1),
+		AnimatedLED(GPIOC, GPIO_PIN_0)
 };
+
 volatile LampStyle CURRENT_STYLE = LampStyle::SEARCHLIGHT;
 
 // NOTE: Any function that overrides a "weak" HAL fn
@@ -35,6 +31,10 @@ volatile LampStyle CURRENT_STYLE = LampStyle::SEARCHLIGHT;
 // https://electronics.stackexchange.com/questions/279524/stm32-interrupts-and-c-dont-go-well-together
 extern "C" void TIM6_IRQHandler() {
 	HAL_TIM_IRQHandler(&htim6);
+}
+
+extern "C" void TIM7_IRQHandler() {
+	HAL_TIM_IRQHandler(&htim7);
 }
 
 static inline void LD2_Set(short state) {
@@ -53,6 +53,10 @@ void RotateLampStyleMode() {
 	default:
 		CURRENT_STYLE = LampStyle::LED;
 		break;
+	}
+
+	for (AnimatedLED& led : *LEDS) {
+		led.setStyle(CURRENT_STYLE);
 	}
 }
 
@@ -85,6 +89,23 @@ extern "C" void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
 			NUM_PERIODS_SINCE_LAST_ROTATE = 0;
 			RotateAspects();
 		}
+	} else if (htim->Instance == TIM7) {
+		// Called at 100kHz
+		static uint32_t counter = 0;
+		++counter;
+
+		for (AnimatedLED& led : *LEDS) {
+			led.compute_pwm_state();
+			led.update_state();
+		}
+
+		if (counter >= 100) {
+			// every 1000 Hz
+			for (AnimatedLED& led : *LEDS) {
+				led.compute_animation_state();
+			}
+			counter = 0;
+		}
 	}
 }
 
@@ -98,23 +119,29 @@ int main(void) {
 	MX_TIM1_Init();
 	MX_ADC_Init();
 	User_Btn_Timer_Init();
+	AnimationStepTimerInit();
+
 
 	for (LED& led : *LEDS) {
 		led.init();
 	}
 
 	// Show current mode on LD2 via blink pattern
+	bool toggle = true;
 	while (1) {
+		for (AnimatedLED& led : *LEDS) {
+			if (toggle) {
+				led.animate_on();
+			} else {
+				led.animate_off();
+			}
+		}
+		toggle = !toggle;
+
 		for (int i = 0; i < (unsigned short) CURRENT_STYLE; i++) {
 			LD2_Set(1);
-			for (LED& led : *LEDS) {
-				led.turnOn();
-			}
 			HAL_Delay(100);
 			LD2_Set(0);
-			for (LED& led : *LEDS) {
-				led.turnOff();
-			}
 			HAL_Delay(100);
 		}
 		HAL_Delay(2000);
@@ -242,6 +269,17 @@ static void User_Btn_Timer_Init() {
 	HAL_NVIC_EnableIRQ(TIM6_IRQn);
 	HAL_TIM_Base_Init(&htim6);
 	HAL_TIM_Base_Start_IT(&htim6);
+}
+
+static void AnimationStepTimerInit() {
+	htim7.Instance = TIM7;
+	htim7.Init.Prescaler = 479; // 48MHz / 4800 = 100kHz
+	htim7.Init.Period = 1;  // as above
+	__HAL_RCC_TIM7_CLK_ENABLE();
+	HAL_NVIC_SetPriority(TIM7_IRQn, 1, 0);
+	HAL_NVIC_EnableIRQ(TIM7_IRQn);
+	HAL_TIM_Base_Init(&htim7);
+	HAL_TIM_Base_Start_IT(&htim7);
 }
 
 /** Configure pins as 
