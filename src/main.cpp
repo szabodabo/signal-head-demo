@@ -18,15 +18,13 @@ static void AnimationStepTimerInit();
 
 volatile int BTN_PRESSED_NUM_PERIODS = 0;
 volatile int NUM_PERIODS_SINCE_LAST_ROTATE = 0;
-static std::vector<AnimatedLED>* LEDS = new std::vector<AnimatedLED>{
-		AnimatedLED(GPIOC, GPIO_PIN_3),
-		AnimatedLED(GPIOC, GPIO_PIN_1),
-		AnimatedLED(GPIOC, GPIO_PIN_0)
-};
+
+static AnimatedLED* LED_C0 = new AnimatedLED(GPIOC, GPIO_PIN_0);
+static AnimatedLED* LED_C1 = new AnimatedLED(GPIOC, GPIO_PIN_1);
+static AnimatedLED* LED_C3 = new AnimatedLED(GPIOC, GPIO_PIN_3);
 
 static std::vector<SignalHead>* HEADS = new std::vector<SignalHead>{
-
-};
+		SignalHead(LED_C0, LED_C1, LED_C3)};
 
 volatile LampStyle CURRENT_STYLE = LampStyle::SEARCHLIGHT;
 
@@ -59,13 +57,15 @@ void RotateLampStyleMode() {
 		break;
 	}
 
-	for (AnimatedLED& led : *LEDS) {
-		led.setStyle(CURRENT_STYLE);
+	for (SignalHead& head : *HEADS) {
+		head.set_style(CURRENT_STYLE);
 	}
 }
 
 void RotateAspects() {
-
+	for (SignalHead& head : *HEADS) {
+		head.rotate_aspect();
+	}
 }
 
 extern "C" void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
@@ -98,15 +98,14 @@ extern "C" void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
 		static uint32_t counter = 0;
 		++counter;
 
-		for (AnimatedLED& led : *LEDS) {
-			led.compute_pwm_state();
-			led.update_state();
+		for (SignalHead& head : *HEADS) {
+			head.compute_and_update_pwm_state();
 		}
 
 		if (counter >= 100) {
 			// every 1000 Hz
-			for (AnimatedLED& led : *LEDS) {
-				led.compute_animation_state();
+			for (SignalHead& head : *HEADS) {
+				head.compute_animation_state();
 			}
 			counter = 0;
 		}
@@ -125,18 +124,12 @@ int main(void) {
 	User_Btn_Timer_Init();
 	AnimationStepTimerInit();
 
-
-	for (LED& led : *LEDS) {
-		led.init();
+	for (SignalHead& head : *HEADS) {
+		head.init();
 	}
 
-	SignalHead head((*LEDS)[2], (*LEDS)[1], (*LEDS)[0]);
-
 	// Show current mode on LD2 via blink pattern
-	bool toggle = true;
 	while (1) {
-		head.rotate_aspect();
-
 		for (int i = 0; i < (unsigned short) CURRENT_STYLE; i++) {
 			LD2_Set(1);
 			HAL_Delay(100);
@@ -263,7 +256,8 @@ static void User_Btn_Timer_Init() {
 	htim6.Instance = TIM6;
 	htim6.Init.Prescaler = 47999; // 48MHz / 48000 = 1000Hz
 	htim6.Init.Period = 99;  // 1000Hz / 100 = 10Hz = 0.1s
-	__HAL_RCC_TIM6_CLK_ENABLE();
+	__HAL_RCC_TIM6_CLK_ENABLE()
+	;
 	HAL_NVIC_SetPriority(TIM6_IRQn, 2, 0);
 	HAL_NVIC_EnableIRQ(TIM6_IRQn);
 	HAL_TIM_Base_Init(&htim6);
@@ -274,7 +268,8 @@ static void AnimationStepTimerInit() {
 	htim7.Instance = TIM7;
 	htim7.Init.Prescaler = 479; // 48MHz / 4800 = 100kHz
 	htim7.Init.Period = 1;  // as above
-	__HAL_RCC_TIM7_CLK_ENABLE();
+	__HAL_RCC_TIM7_CLK_ENABLE()
+	;
 	HAL_NVIC_SetPriority(TIM7_IRQn, 1, 0);
 	HAL_NVIC_EnableIRQ(TIM7_IRQn);
 	HAL_TIM_Base_Init(&htim7);

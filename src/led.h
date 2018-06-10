@@ -1,10 +1,3 @@
-/*
- * led.h
- *
- *  Created on: Jun 10, 2018
- *      Author: dakota
- */
-
 #ifndef LED_H_
 #define LED_H_
 
@@ -36,6 +29,7 @@ public:
 
 		// Start with led turned off
 		turnOff();
+		update_state();
 	}
 
 	void turnOn() {
@@ -197,7 +191,7 @@ enum class SignalHead_Aspect {
 
 class SignalHead {
 public:
-	SignalHead(AnimatedLED& green, AnimatedLED& amber, AnimatedLED& red,
+	SignalHead(AnimatedLED* green, AnimatedLED* amber, AnimatedLED* red,
 			SignalHead_Aspect aspect = SignalHead_Aspect::Red) :
 			green_(green), amber_(amber), red_(red) {
 		set_aspect(aspect);
@@ -208,20 +202,20 @@ public:
 
 		switch (aspect_) {
 		case SignalHead_Aspect::Green:
-			green_.animate_on();
-			red_.animate_off();
-			amber_.animate_off();
+			green_->animate_on();
+			red_->animate_off();
+			amber_->animate_off();
 			break;
 		case SignalHead_Aspect::Amber:
-			amber_.animate_on();
-			red_.animate_off();
-			green_.animate_off();
+			amber_->animate_on();
+			red_->animate_off();
+			green_->animate_off();
 			break;
 		case SignalHead_Aspect::Red:
 		default:
-			red_.animate_on();
-			green_.animate_off();
-			amber_.animate_off();
+			red_->animate_on();
+			green_->animate_off();
+			amber_->animate_off();
 			break;
 		}
 	}
@@ -235,10 +229,37 @@ public:
 		set_aspect(map.at(aspect_));
 	}
 
+	void set_style(LampStyle style) {
+		for (AnimatedLED* led : {green_, amber_, red_}) {
+			led->setStyle(style);
+		}
+	}
+
+	void compute_and_update_pwm_state() {
+		for (AnimatedLED* led : {green_, amber_, red_}) {
+			led->compute_pwm_state();
+			led->update_state();
+		}
+	}
+
+	void compute_animation_state() {
+		for (AnimatedLED* led : {green_, amber_, red_}) {
+			led->compute_animation_state();
+		}
+	}
+
+	void init() {
+		for (AnimatedLED* led : {green_, amber_, red_}) {
+			led->init();
+		}
+	}
+
+
+
 private:
-	AnimatedLED& green_;
-	AnimatedLED& amber_;
-	AnimatedLED& red_;
+	AnimatedLED* green_;
+	AnimatedLED* amber_;
+	AnimatedLED* red_;
 	SignalHead_Aspect aspect_;
 };
 
