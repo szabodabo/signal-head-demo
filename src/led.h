@@ -10,6 +10,7 @@
 
 #include "stm32f0xx_hal.h"
 #include <vector>
+#include <map>
 #include <algorithm>
 
 enum class LampStyle
@@ -50,11 +51,14 @@ public:
 				on_ ? GPIO_PIN_SET : GPIO_PIN_RESET);
 	}
 
+protected:
+	bool is_on() { return on_; }
+
 private:
 	/*global*/
 	GPIO_TypeDef* gpio_port_;
 	const uint16_t gpio_pin_;
-	bool on_ = 0;
+	bool on_ = false;
 };
 
 class AnimationFunction {
@@ -140,11 +144,17 @@ public:
 	}
 
 	void animate_on() {
+		if (is_on()) {
+			return;
+		}
 		current_fn_ = on_fn_;
 		animation_start_ = HAL_GetTick();
 	}
 
 	void animate_off() {
+		if (!is_on()) {
+			return;
+		}
 		current_fn_ = off_fn_;
 		animation_start_ = HAL_GetTick();
 	}
@@ -179,6 +189,57 @@ private:
 	AnimationFunction *on_fn_, *off_fn_;
 	AnimationFunction* current_fn_ = nullptr;
 	uint32_t animation_start_ = 0;
+};
+
+enum class SignalHead_Aspect {
+	Red, Amber, Green,
+};
+
+class SignalHead {
+public:
+	SignalHead(AnimatedLED& green, AnimatedLED& amber, AnimatedLED& red,
+			SignalHead_Aspect aspect = SignalHead_Aspect::Red) :
+			green_(green), amber_(amber), red_(red) {
+		set_aspect(aspect);
+	}
+
+	void set_aspect(SignalHead_Aspect aspect) {
+		aspect_ = aspect;
+
+		switch (aspect_) {
+		case SignalHead_Aspect::Green:
+			green_.animate_on();
+			red_.animate_off();
+			amber_.animate_off();
+			break;
+		case SignalHead_Aspect::Amber:
+			amber_.animate_on();
+			red_.animate_off();
+			green_.animate_off();
+			break;
+		case SignalHead_Aspect::Red:
+		default:
+			red_.animate_on();
+			green_.animate_off();
+			amber_.animate_off();
+			break;
+		}
+	}
+
+	void rotate_aspect() {
+		static std::map<SignalHead_Aspect, SignalHead_Aspect> map = {
+			std::make_pair(SignalHead_Aspect::Green, SignalHead_Aspect::Red),
+			std::make_pair(SignalHead_Aspect::Red, SignalHead_Aspect::Amber),
+			std::make_pair(SignalHead_Aspect::Amber, SignalHead_Aspect::Green),
+		};
+		set_aspect(map.at(aspect_));
+	}
+
+private:
+	AnimatedLED& green_;
+	AnimatedLED& amber_;
+	AnimatedLED& red_;
+	SignalHead_Aspect aspect_;
 };
 
 #endif /* LED_H_ */

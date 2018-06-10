@@ -24,6 +24,10 @@ static std::vector<AnimatedLED>* LEDS = new std::vector<AnimatedLED>{
 		AnimatedLED(GPIOC, GPIO_PIN_0)
 };
 
+static std::vector<SignalHead>* HEADS = new std::vector<SignalHead>{
+
+};
+
 volatile LampStyle CURRENT_STYLE = LampStyle::SEARCHLIGHT;
 
 // NOTE: Any function that overrides a "weak" HAL fn
@@ -126,17 +130,12 @@ int main(void) {
 		led.init();
 	}
 
+	SignalHead head((*LEDS)[2], (*LEDS)[1], (*LEDS)[0]);
+
 	// Show current mode on LD2 via blink pattern
 	bool toggle = true;
 	while (1) {
-		for (AnimatedLED& led : *LEDS) {
-			if (toggle) {
-				led.animate_on();
-			} else {
-				led.animate_off();
-			}
-		}
-		toggle = !toggle;
+		head.rotate_aspect();
 
 		for (int i = 0; i < (unsigned short) CURRENT_STYLE; i++) {
 			LD2_Set(1);
