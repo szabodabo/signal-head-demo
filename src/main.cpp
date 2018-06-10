@@ -1,5 +1,7 @@
 #include "main.h"
 #include "stm32f0xx_hal.h"
+#include "led.h"
+#include <vector>
 
 ADC_HandleTypeDef hadc;
 TIM_HandleTypeDef htim1, htim6;
@@ -10,15 +12,23 @@ static void MX_TIM1_Init(void);
 static void MX_ADC_Init(void);
 static void User_Btn_Timer_Init();
 
-#define STYLE_MODE_LED 1
-#define STYLE_MODE_INCANDESCENT 2
-#define STYLE_MODE_SEARCHLIGHT 3
 #define BTN_PRESSED_THRESHOLD_PERIODS 15  // 1.5 seconds
 #define ASPECT_ROTATE_PERIODS 25  // 2.5 seconds
 
+enum class LampStyle : unsigned short {
+	LED = 1,
+	INCANDESCENT = 2,
+	SEARCHLIGHT = 3,
+};
+
 volatile int BTN_PRESSED_NUM_PERIODS = 0;
 volatile int NUM_PERIODS_SINCE_LAST_ROTATE = 0;
-volatile int CURRENT_STYLE = STYLE_MODE_SEARCHLIGHT;
+static std::vector<LED>* LEDS = new std::vector<LED>{
+		LED(GPIOC, GPIO_PIN_3),
+		LED(GPIOC, GPIO_PIN_1),
+		LED(GPIOC, GPIO_PIN_0),
+};
+volatile LampStyle CURRENT_STYLE = LampStyle::SEARCHLIGHT;
 
 // NOTE: Any function that overrides a "weak" HAL fn
 // must be 'extern "C"' to ensure name lookup works correctly.
@@ -33,10 +43,16 @@ static inline void LD2_Set(short state) {
 }
 
 void RotateLampStyleMode() {
-	if (CURRENT_STYLE == STYLE_MODE_SEARCHLIGHT) {
-		CURRENT_STYLE = STYLE_MODE_LED;
-	} else {
-		CURRENT_STYLE++;
+	switch (CURRENT_STYLE) {
+	case LampStyle::LED:
+		CURRENT_STYLE = LampStyle::INCANDESCENT;
+		break;
+	case LampStyle::INCANDESCENT:
+		CURRENT_STYLE = LampStyle::SEARCHLIGHT;
+		break;
+	default:
+		CURRENT_STYLE = LampStyle::LED;
+		break;
 	}
 }
 
@@ -83,12 +99,22 @@ int main(void) {
 	MX_ADC_Init();
 	User_Btn_Timer_Init();
 
+	for (LED& led : *LEDS) {
+		led.init();
+	}
+
 	// Show current mode on LD2 via blink pattern
 	while (1) {
-		for (int i = 0; i < CURRENT_STYLE; i++) {
+		for (int i = 0; i < (unsigned short) CURRENT_STYLE; i++) {
 			LD2_Set(1);
+			for (LED& led : *LEDS) {
+				led.turnOn();
+			}
 			HAL_Delay(100);
 			LD2_Set(0);
+			for (LED& led : *LEDS) {
+				led.turnOff();
+			}
 			HAL_Delay(100);
 		}
 		HAL_Delay(2000);
