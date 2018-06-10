@@ -2,12 +2,57 @@
 #include "stm32f0xx_hal.h"
 
 ADC_HandleTypeDef hadc;
-TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim1, htim6;
 
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_ADC_Init(void);
+static void User_Btn_Timer_Init();
+
+volatile int BTN_PRESSED_NUM_PERIODS = 0;
+static int BTN_PRESSED_THRESHOLD_PERIODS = 15; // 1.5 sec
+
+#define STYLE_MODE_LED 1
+#define STYLE_MODE_INCANDESCENT 2
+#define STYLE_MODE_SEARCHLIGHT 3
+
+volatile int CURRENT_STYLE = STYLE_MODE_SEARCHLIGHT;
+
+void TIM6_IRQHandler() {
+	HAL_TIM_IRQHandler(&htim6);
+}
+
+static void LD2_Set(short state) {
+	HAL_GPIO_WritePin(ld2_GPIO_Port, ld2_Pin, state ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
+
+void RotateLampStyleMode() {
+	if (CURRENT_STYLE == STYLE_MODE_SEARCHLIGHT) {
+		CURRENT_STYLE = STYLE_MODE_LED;
+	} else {
+		CURRENT_STYLE++;
+	}
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
+	if (htim->Instance == TIM6) {
+		if (HAL_GPIO_ReadPin(user_btn_GPIO_Port, user_btn_Pin) == GPIO_PIN_RESET) {
+			// button pressed
+			BTN_PRESSED_NUM_PERIODS++;
+			if (BTN_PRESSED_NUM_PERIODS > BTN_PRESSED_THRESHOLD_PERIODS) {
+				LD2_Set(1);
+				RotateLampStyleMode();
+				BTN_PRESSED_NUM_PERIODS = 0;  // restart count
+			}
+		} else {
+			// button is released
+			BTN_PRESSED_NUM_PERIODS = 0;
+			LD2_Set(0);
+		}
+	}
+}
+
 
 int main(void) {
 	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
@@ -18,14 +63,17 @@ int main(void) {
 	MX_GPIO_Init();
 	MX_TIM1_Init();
 	MX_ADC_Init();
+	User_Btn_Timer_Init();
 
+	// Show current mode on LD2 via blink pattern
 	while (1) {
-		if (HAL_GPIO_ReadPin(user_btn_GPIO_Port, user_btn_Pin) == GPIO_PIN_RESET) {
-			while (1) {
-				HAL_GPIO_TogglePin(ld2_GPIO_Port, ld2_Pin);
-				HAL_Delay(500);
-			}
+		for (int i = 0; i < CURRENT_STYLE; i++) {
+			LD2_Set(1);
+			HAL_Delay(100);
+			LD2_Set(0);
+			HAL_Delay(100);
 		}
+		HAL_Delay(2000);
 	}
 }
 
@@ -36,7 +84,7 @@ void SystemClock_Config(void) {
 
 	// Initializes the CPU, AHB and APB busses clocks
 	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI
-			| RCC_OSCILLATORTYPE_HSI14;
+		| RCC_OSCILLATORTYPE_HSI14;
 	RCC_OscInitStruct.HSIState = RCC_HSI_ON;
 	RCC_OscInitStruct.HSI14State = RCC_HSI14_ON;
 	RCC_OscInitStruct.HSICalibrationValue = 16;
@@ -134,6 +182,19 @@ static void MX_TIM1_Init(void) {
 
 }
 
+// Init basic timer TIM6 for user btn (long?) press detection.
+static void User_Btn_Timer_Init() {
+	htim6.Instance = TIM6;
+	//htim6.Init.Prescaler = 47999; // 48MHz / 48000 = 1000Hz
+	htim6.Init.Prescaler = 3999; // 8MHz / 8000 = 1000Hz
+	htim6.Init.Period = 99;  // 1000Hz / 100 = 10Hz = 0.1s
+	__HAL_RCC_TIM6_CLK_ENABLE();
+	HAL_NVIC_SetPriority(TIM6_IRQn, 0, 0);
+	HAL_NVIC_EnableIRQ(TIM6_IRQn);
+	HAL_TIM_Base_Init(&htim6);
+	HAL_TIM_Base_Start_IT(&htim6);
+}
+
 /** Configure pins as 
  * Analog
  * Input
@@ -165,7 +226,6 @@ static void MX_GPIO_Init(void) {
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(ld2_GPIO_Port, &GPIO_InitStruct);
-
 }
 
 /**
@@ -175,7 +235,12 @@ static void MX_GPIO_Init(void) {
  * @retval None
  */
 void _Error_Handler(char *file, int line) {
-	while (1) {}
+	while (1) {
+		HAL_GPIO_WritePin(ld2_GPIO_Port, ld2_Pin, GPIO_PIN_SET);
+		HAL_Delay(250);
+		HAL_GPIO_WritePin(ld2_GPIO_Port, ld2_Pin, GPIO_PIN_RESET);
+		HAL_Delay(250);
+	}
 }
 
 #ifdef  USE_FULL_ASSERT
