@@ -81,12 +81,15 @@ public:
 			onward_(onward) {
 	}
 	float get_value(float msec) const override {
-		// .5 second fade
+		// .5 second fade; on is delayed by .25 seconds
+		float left_offset_msec = onward_ ? 250 : 0;
+		msec = std::max(0.0f, msec - left_offset_msec);
+
 		float frac = std::min(msec / 500, 1.0f);
 		if (onward_) {
 			return frac;
 		} else {
-			return 1.0 - frac;
+			return 1.0f - frac;
 		}
 	}
 private:
