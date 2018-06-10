@@ -20,7 +20,10 @@ volatile int BTN_PRESSED_NUM_PERIODS = 0;
 volatile int NUM_PERIODS_SINCE_LAST_ROTATE = 0;
 volatile int CURRENT_STYLE = STYLE_MODE_SEARCHLIGHT;
 
-void TIM6_IRQHandler() {
+// NOTE: Any function that overrides a "weak" HAL fn
+// must be 'extern "C"' to ensure name lookup works correctly.
+// https://electronics.stackexchange.com/questions/279524/stm32-interrupts-and-c-dont-go-well-together
+extern "C" void TIM6_IRQHandler() {
 	HAL_TIM_IRQHandler(&htim6);
 }
 
@@ -41,7 +44,7 @@ void RotateAspects() {
 
 }
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
+extern "C" void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
 	if (htim->Instance == TIM6) {
 		if (HAL_GPIO_ReadPin(user_btn_GPIO_Port, user_btn_Pin)
 				== GPIO_PIN_RESET) {
@@ -208,9 +211,8 @@ static void User_Btn_Timer_Init() {
 	htim6.Instance = TIM6;
 	htim6.Init.Prescaler = 47999; // 48MHz / 48000 = 1000Hz
 	htim6.Init.Period = 99;  // 1000Hz / 100 = 10Hz = 0.1s
-	__HAL_RCC_TIM6_CLK_ENABLE()
-	;
-	HAL_NVIC_SetPriority(TIM6_IRQn, 0, 0);
+	__HAL_RCC_TIM6_CLK_ENABLE();
+	HAL_NVIC_SetPriority(TIM6_IRQn, 2, 0);
 	HAL_NVIC_EnableIRQ(TIM6_IRQn);
 	HAL_TIM_Base_Init(&htim6);
 	HAL_TIM_Base_Start_IT(&htim6);
@@ -252,6 +254,8 @@ static void MX_GPIO_Init(void) {
 	HAL_GPIO_Init(ld2_GPIO_Port, &GPIO_InitStruct);
 }
 
+extern "C" {
+
 /**
  * @brief  This function is executed in case of error occurrence.
  * @param  file: The file name as string.
@@ -282,4 +286,6 @@ void assert_failed(uint8_t* file, uint32_t line) {
 	/* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
+
+}  // extern "C"
 
