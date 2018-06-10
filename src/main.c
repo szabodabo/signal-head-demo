@@ -25,7 +25,8 @@ void TIM6_IRQHandler() {
 }
 
 static inline void LD2_Set(short state) {
-	HAL_GPIO_WritePin(ld2_GPIO_Port, ld2_Pin, state ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(ld2_GPIO_Port, ld2_Pin,
+			state ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 
 void RotateLampStyleMode() {
@@ -42,7 +43,8 @@ void RotateAspects() {
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
 	if (htim->Instance == TIM6) {
-		if (HAL_GPIO_ReadPin(user_btn_GPIO_Port, user_btn_Pin) == GPIO_PIN_RESET) {
+		if (HAL_GPIO_ReadPin(user_btn_GPIO_Port, user_btn_Pin)
+				== GPIO_PIN_RESET) {
 			// button is pressed
 			BTN_PRESSED_NUM_PERIODS++;
 
@@ -66,7 +68,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
 		}
 	}
 }
-
 
 int main(void) {
 	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
@@ -96,23 +97,25 @@ void SystemClock_Config(void) {
 	RCC_OscInitTypeDef RCC_OscInitStruct;
 	RCC_ClkInitTypeDef RCC_ClkInitStruct;
 
-	// Initializes the CPU, AHB and APB busses clocks
-	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI
-		| RCC_OSCILLATORTYPE_HSI14;
-	RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+	/**Initializes the CPU, AHB and APB busses clocks
+	 */
+	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI14
+			| RCC_OSCILLATORTYPE_HSE;
+	RCC_OscInitStruct.HSEState = RCC_HSE_ON;
 	RCC_OscInitStruct.HSI14State = RCC_HSI14_ON;
-	RCC_OscInitStruct.HSICalibrationValue = 16;
 	RCC_OscInitStruct.HSI14CalibrationValue = 16;
 	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-	RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL12;
+	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+	RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL6;
 	RCC_OscInitStruct.PLL.PREDIV = RCC_PREDIV_DIV1;
 	if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
 		_Error_Handler(__FILE__, __LINE__);
 	}
 
-	// Initializes the CPU, AHB and APB busses clocks
-	RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_SYSCLK;
+	/**Initializes the CPU, AHB and APB busses clocks
+	 */
+	RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+			| RCC_CLOCKTYPE_PCLK1;
 	RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
 	RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
 	RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
@@ -121,10 +124,12 @@ void SystemClock_Config(void) {
 		_Error_Handler(__FILE__, __LINE__);
 	}
 
-	// Configure the Systick interrupt time
+	/**Configure the Systick interrupt time
+	 */
 	HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq() / 1000);
 
-	// Configure the Systick
+	/**Configure the Systick
+	 */
 	HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
 
 	/* SysTick_IRQn interrupt configuration */
@@ -203,7 +208,8 @@ static void User_Btn_Timer_Init() {
 	htim6.Instance = TIM6;
 	htim6.Init.Prescaler = 47999; // 48MHz / 48000 = 1000Hz
 	htim6.Init.Period = 99;  // 1000Hz / 100 = 10Hz = 0.1s
-	__HAL_RCC_TIM6_CLK_ENABLE();
+	__HAL_RCC_TIM6_CLK_ENABLE()
+	;
 	HAL_NVIC_SetPriority(TIM6_IRQn, 0, 0);
 	HAL_NVIC_EnableIRQ(TIM6_IRQn);
 	HAL_TIM_Base_Init(&htim6);
@@ -222,9 +228,12 @@ static void MX_GPIO_Init(void) {
 	GPIO_InitTypeDef GPIO_InitStruct;
 
 	/* GPIO Ports Clock Enable */
-	__HAL_RCC_GPIOC_CLK_ENABLE();
-	__HAL_RCC_GPIOF_CLK_ENABLE();
-	__HAL_RCC_GPIOA_CLK_ENABLE();
+	__HAL_RCC_GPIOC_CLK_ENABLE()
+	;
+	__HAL_RCC_GPIOF_CLK_ENABLE()
+	;
+	__HAL_RCC_GPIOA_CLK_ENABLE()
+	;
 
 	/*Configure GPIO pin Output Level */
 	HAL_GPIO_WritePin(ld2_GPIO_Port, ld2_Pin, GPIO_PIN_RESET);
