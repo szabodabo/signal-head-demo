@@ -1,4 +1,3 @@
-/* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32f0xx_hal.h"
 
@@ -35,8 +34,7 @@ void SystemClock_Config(void) {
 	RCC_OscInitTypeDef RCC_OscInitStruct;
 	RCC_ClkInitTypeDef RCC_ClkInitStruct;
 
-	/**Initializes the CPU, AHB and APB busses clocks
-	 */
+	// Initializes the CPU, AHB and APB busses clocks
 	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI
 			| RCC_OSCILLATORTYPE_HSI14;
 	RCC_OscInitStruct.HSIState = RCC_HSI_ON;
@@ -48,8 +46,7 @@ void SystemClock_Config(void) {
 		_Error_Handler(__FILE__, __LINE__);
 	}
 
-	/**Initializes the CPU, AHB and APB busses clocks
-	 */
+	// Initializes the CPU, AHB and APB busses clocks
 	RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
 			| RCC_CLOCKTYPE_PCLK1;
 	RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
@@ -60,12 +57,10 @@ void SystemClock_Config(void) {
 		_Error_Handler(__FILE__, __LINE__);
 	}
 
-	/**Configure the Systick interrupt time
-	 */
+	// Configure the Systick interrupt time
 	HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq() / 1000);
 
-	/**Configure the Systick
-	 */
+	// Configure the Systick
 	HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
 
 	/* SysTick_IRQn interrupt configuration */
@@ -151,12 +146,9 @@ static void MX_GPIO_Init(void) {
 	GPIO_InitTypeDef GPIO_InitStruct;
 
 	/* GPIO Ports Clock Enable */
-	__HAL_RCC_GPIOC_CLK_ENABLE()
-	;
-	__HAL_RCC_GPIOF_CLK_ENABLE()
-	;
-	__HAL_RCC_GPIOA_CLK_ENABLE()
-	;
+	__HAL_RCC_GPIOC_CLK_ENABLE();
+	__HAL_RCC_GPIOF_CLK_ENABLE();
+	__HAL_RCC_GPIOA_CLK_ENABLE();
 
 	/*Configure GPIO pin Output Level */
 	HAL_GPIO_WritePin(ld2_GPIO_Port, ld2_Pin, GPIO_PIN_RESET);
@@ -183,11 +175,7 @@ static void MX_GPIO_Init(void) {
  * @retval None
  */
 void _Error_Handler(char *file, int line) {
-	/* USER CODE BEGIN Error_Handler_Debug */
-	/* User can add his own implementation to report the HAL error return state */
-	while (1) {
-	}
-	/* USER CODE END Error_Handler_Debug */
+	while (1) {}
 }
 
 #ifdef  USE_FULL_ASSERT
