@@ -24,14 +24,11 @@ public:
 
 		// Configure pin in output push/pull mode
 		GPIO_InitStructure.Pin = gpio_pin_;
-		GPIO_InitStructure.Mode = GPIO_MODE_OUTPUT_PP;
+		GPIO_InitStructure.Mode = GPIO_MODE_OUTPUT_OD;
 		GPIO_InitStructure.Pull = GPIO_NOPULL;
-		GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_LOW;
+		GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_MEDIUM;
+		update_state();  // init off
 		HAL_GPIO_Init(gpio_port_, &GPIO_InitStructure);
-
-		// Start with led turned off
-		turnOff();
-		update_state();
 	}
 
 	void turnOn() {
@@ -44,7 +41,7 @@ public:
 
 	void update_state() {
 		HAL_GPIO_WritePin(gpio_port_, gpio_pin_,
-				on_ ? GPIO_PIN_SET : GPIO_PIN_RESET);
+				on_ ? GPIO_PIN_RESET : GPIO_PIN_SET);
 	}
 
 protected:
@@ -195,31 +192,34 @@ public:
 	}
 
 	void do_animation(std::vector<AnimationFunction*> animations) {
+		__disable_irq();
 		for (auto& fn : animations) {
 			animation_queue_.push_back(std::unique_ptr<AnimationFunction>(fn));
 		}
+		__enable_irq();
 	}
 
 	void compute_animation_state() {
-		if (animation_queue_.empty()) {
-			return;
-		}
-		if (current_animation_start_tick_ == 0) {
-			// unstarted animation
-			current_animation_start_tick_ = HAL_GetTick();
-		}
+		__disable_irq();
+		if (!animation_queue_.empty()) {
+			if (current_animation_start_tick_ == 0) {
+				// unstarted animation
+				current_animation_start_tick_ = HAL_GetTick();
+			}
 
-		uint32_t msec_elapsed = HAL_GetTick() - current_animation_start_tick_;
-		AnimationFunction* current_animation = animation_queue_[0].get();
-		float old_brightness_frac = (float) get_brightness_level() / 255.0;
-		float animation_fraction = current_animation->get_value(msec_elapsed,
-				old_brightness_frac);
-		set_brightness_level(animation_fraction * 255.0);
+			uint32_t msec_elapsed = HAL_GetTick() - current_animation_start_tick_;
+			AnimationFunction* current_animation = animation_queue_[0].get();
+			float old_brightness_frac = (float) get_brightness_level() / 255.0;
+			float animation_fraction = current_animation->get_value(msec_elapsed,
+					old_brightness_frac);
+			set_brightness_level(animation_fraction * 255.0);
 
-		if (current_animation->is_done(msec_elapsed)) {
-			animation_queue_.erase(animation_queue_.begin());
-			current_animation_start_tick_ = 0;
+			if (current_animation->is_done(msec_elapsed)) {
+				animation_queue_.erase(animation_queue_.begin());
+				current_animation_start_tick_ = 0;
+			}
 		}
+		__enable_irq();
 	}
 
 private:
@@ -233,7 +233,7 @@ enum class SignalHead_Aspect {
 
 class SignalHead {
 public:
-	SignalHead(AnimatedLED* green, AnimatedLED* amber, AnimatedLED* red,
+	SignalHead(AnimatedLED* red, AnimatedLED* amber, AnimatedLED* green,
 			SignalHead_Aspect aspect = SignalHead_Aspect::Red,
 			LampStyle style = LampStyle::SEARCHLIGHT) :
 			green_(green), amber_(amber), red_(red), style_(style) {

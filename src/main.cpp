@@ -19,12 +19,23 @@ static void AnimationStepTimerInit();
 volatile int BTN_PRESSED_NUM_PERIODS = 0;
 volatile int NUM_PERIODS_SINCE_LAST_ROTATE = 0;
 
-static AnimatedLED* LED_C0 = new AnimatedLED(GPIOC, GPIO_PIN_0);
-static AnimatedLED* LED_C1 = new AnimatedLED(GPIOC, GPIO_PIN_1);
-static AnimatedLED* LED_C3 = new AnimatedLED(GPIOC, GPIO_PIN_3);
+static AnimatedLED LED_C0(GPIOC, GPIO_PIN_0);
+static AnimatedLED LED_C1(GPIOC, GPIO_PIN_1);
+static AnimatedLED LED_C3(GPIOC, GPIO_PIN_3);
+
+static AnimatedLED LED_A1(GPIOA, GPIO_PIN_1);
+static AnimatedLED LED_B0(GPIOB, GPIO_PIN_0);
+static AnimatedLED LED_C2(GPIOC, GPIO_PIN_2);
+
+static AnimatedLED LED_C10(GPIOC, GPIO_PIN_10);
+static AnimatedLED LED_C11(GPIOC, GPIO_PIN_11);
+static AnimatedLED LED_C12(GPIOC, GPIO_PIN_12);
 
 static std::vector<SignalHead>* HEADS = new std::vector<SignalHead>{
-		SignalHead(LED_C0, LED_C1, LED_C3)};
+		SignalHead(&LED_C3, &LED_C1, &LED_C0),
+		SignalHead(&LED_A1, &LED_B0, &LED_C2),
+		SignalHead(&LED_C10, &LED_C11, &LED_C12),
+};
 
 volatile LampStyle CURRENT_STYLE = LampStyle::SEARCHLIGHT;
 
@@ -289,12 +300,11 @@ static void MX_GPIO_Init(void) {
 	GPIO_InitTypeDef GPIO_InitStruct;
 
 	/* GPIO Ports Clock Enable */
-	__HAL_RCC_GPIOC_CLK_ENABLE()
-	;
-	__HAL_RCC_GPIOF_CLK_ENABLE()
-	;
-	__HAL_RCC_GPIOA_CLK_ENABLE()
-	;
+	__HAL_RCC_GPIOA_CLK_ENABLE();
+	__HAL_RCC_GPIOB_CLK_ENABLE();
+	__HAL_RCC_GPIOC_CLK_ENABLE();
+	__HAL_RCC_GPIOF_CLK_ENABLE();
+
 
 	/*Configure GPIO pin Output Level */
 	HAL_GPIO_WritePin(ld2_GPIO_Port, ld2_Pin, GPIO_PIN_RESET);
