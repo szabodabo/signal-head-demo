@@ -26,7 +26,7 @@ static AnimatedLED* LED_C3 = new AnimatedLED(GPIOC, GPIO_PIN_3);
 static std::vector<SignalHead>* HEADS = new std::vector<SignalHead>{
 		SignalHead(LED_C0, LED_C1, LED_C3)};
 
-volatile LampStyle CURRENT_STYLE = LampStyle::SEARCHLIGHT;
+volatile LampStyle CURRENT_STYLE = LampStyle::LED;
 
 // NOTE: Any function that overrides a "weak" HAL fn
 // must be 'extern "C"' to ensure name lookup works correctly.
@@ -126,6 +126,7 @@ int main(void) {
 
 	for (SignalHead& head : *HEADS) {
 		head.init();
+		head.set_style(CURRENT_STYLE);
 	}
 
 	// Show current mode on LD2 via blink pattern
