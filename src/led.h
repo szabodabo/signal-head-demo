@@ -5,6 +5,8 @@
 #include <vector>
 #include <map>
 #include <algorithm>
+#include <memory>
+#include <functional>
 
 enum class LampStyle
 	: unsigned short {
@@ -94,23 +96,34 @@ private:
 
 class FadeFn: public AnimationFunction {
 public:
-	FadeFn(bool onward) :
-			onward_(onward) {
-		if (onward_) {
-			delay_msec_ = total_duration_msec_ * (0.66f);
-			total_duration_msec_ += delay_msec_;
+	FadeFn(float from_frac, float to_frac, float additional_delay_msec = 0, float duration_msec = 300) :
+			from_frac_(from_frac), to_frac_(to_frac),
+			delay_msec_(additional_delay_msec),
+			total_duration_msec_(duration_msec + additional_delay_msec) {
+		onward_ = to_frac > from_frac;
+		if (onward_ && additional_delay_msec == 0) {  // hack: pls fix
+			float special_on_delay = total_duration_msec_ * (0.66f);
+			delay_msec_ += special_on_delay;
+			total_duration_msec_ += special_on_delay;
 		}
 	}
+
 	float get_value(float msec_elapsed, float current_brightness_frac) const
 			override {
 		msec_elapsed = std::max(0.0f, msec_elapsed - delay_msec_);
 
 		float frac = std::min(msec_elapsed / total_duration_msec_, 1.0f);
 		if (onward_) {
+			// Limit onward value to to_frac_
+			if (frac > to_frac_) { frac = to_frac_; }
+			// If already "more" on, use current brightness.
 			return std::max(frac, current_brightness_frac);
 		} else {
-			float new_frac = 1.0f - frac;
-			return std::min(new_frac, current_brightness_frac);
+			frac = 1.0f - frac;
+			// Limit offward value to to_frac
+			if (frac < to_frac_) { frac = to_frac_; }
+			// If already "more" off, use current brightness.
+			return std::min(frac, current_brightness_frac);
 		}
 	}
 
@@ -122,17 +135,25 @@ public:
 
 private:
 	bool onward_ = true;
+	float from_frac_, to_frac_;
 	float delay_msec_ = 0;
 	float total_duration_msec_ = 300;
 };
 
-static SquareFunction* LED_ON_ANIMATION = new SquareFunction(
-/*is_onward=*/true);
-static SquareFunction* LED_OFF_ANIMATION = new SquareFunction(
-/*is_onward=*/false);
+SquareFunction* NewLEDOnAnimation() {
+	return new SquareFunction(/*is_onward=*/true);
+}
+SquareFunction* NewLEDOffAnimation() {
+	return new SquareFunction(/*is_onward=*/false);
+}
 
-static FadeFn* FADE_ON_ANIMATION = new FadeFn(true);
-static FadeFn* FADE_OFF_ANIMATION = new FadeFn(false);
+FadeFn* NewFadeOffAnimation(float delay_ms = 0, float duration_ms = 300) {
+	return new FadeFn(1.0, 0.0, delay_ms, duration_ms);
+}
+FadeFn* NewFadeOnAnimation(float delay_ms = 0, float duration_ms = 300) {
+	return new FadeFn(0.0, 1.0, delay_ms, duration_ms);
+}
+
 
 class DimmableLED: public LED {
 public:
@@ -174,8 +195,8 @@ public:
 	}
 
 	void do_animation(std::vector<AnimationFunction*> animations) {
-		for (AnimationFunction* fn : animations) {
-			animation_queue_.push_back(fn);
+		for (auto& fn : animations) {
+			animation_queue_.push_back(std::unique_ptr<AnimationFunction>(fn));
 		}
 	}
 
@@ -189,7 +210,7 @@ public:
 		}
 
 		uint32_t msec_elapsed = HAL_GetTick() - current_animation_start_tick_;
-		AnimationFunction* current_animation = animation_queue_[0];
+		AnimationFunction* current_animation = animation_queue_[0].get();
 		float old_brightness_frac = (float) get_brightness_level() / 255.0;
 		float animation_fraction = current_animation->get_value(msec_elapsed,
 				old_brightness_frac);
@@ -202,7 +223,7 @@ public:
 	}
 
 private:
-	std::vector<AnimationFunction*> animation_queue_;
+	std::vector<std::unique_ptr<AnimationFunction>> animation_queue_;
 	uint32_t current_animation_start_tick_ = 0;
 };
 
@@ -254,50 +275,73 @@ public:
 
 private:
 	void set_aspect(SignalHead_Aspect new_aspect) {
-		static std::map<LampStyle,
-		                std::pair<AnimationFunction*,
-						          AnimationFunction*>> simple_animations = {
-			{LampStyle::LED, {LED_ON_ANIMATION, LED_OFF_ANIMATION}},
-			{LampStyle::INCANDESCENT, {FADE_ON_ANIMATION, FADE_OFF_ANIMATION}},
-		};
+		std::function<AnimationFunction*()> simple_on, simple_off;
+		if (style_ == LampStyle::LED) {
+			simple_on = []() { return NewLEDOnAnimation(); };
+			simple_off = []() { return NewLEDOffAnimation(); };
+		} else {
+			simple_on = [](){ return NewFadeOnAnimation(); };
+			simple_off = [](){ return NewFadeOffAnimation(); };
+		}
 
 		if (aspect_ == new_aspect) { return; }
 
 		if (style_ != LampStyle::SEARCHLIGHT) {
-			AnimationFunction* on = simple_animations.at(style_).first;
-			AnimationFunction* off = simple_animations.at(style_).second;
-
 			if (new_aspect == SignalHead_Aspect::Green) {
-				green_->do_animation({on});
-				amber_->do_animation({off});
-				red_->do_animation({off});
+				green_->do_animation({simple_on()});
+				amber_->do_animation({simple_off()});
+				red_->do_animation({simple_off()});
 			} else if (new_aspect == SignalHead_Aspect::Amber) {
-				green_->do_animation({off});
-				amber_->do_animation({on});
-				red_->do_animation({off});
+				green_->do_animation({simple_off()});
+				amber_->do_animation({simple_on()});
+				red_->do_animation({simple_off()});
 			} else {
-				green_->do_animation({off});
-				amber_->do_animation({off});
-				red_->do_animation({on});
+				green_->do_animation({simple_off()});
+				amber_->do_animation({simple_off()});
+				red_->do_animation({simple_on()});
 			}
 		} else {
 			if (aspect_ != SignalHead_Aspect::Red
 					&& new_aspect != SignalHead_Aspect::Red) {
 				// we need to bounce via red if going from one non-red to another.
-				// insert blank animations to delay the actual aspect?
-				// Add a generic delay param?
+				AnimatedLED *to_turn_off, *to_turn_on;
 
+				if (new_aspect == SignalHead_Aspect::Green) {
+					to_turn_off = amber_;
+					to_turn_on = green_;
+				} else {
+					to_turn_off = green_;
+					to_turn_on = amber_;
+				}
+				to_turn_off->do_animation({simple_off()});
+
+				// TODO: simple_on/off?
+				auto* red_in_fn = new FadeFn(/*from*/0.0, /*to*/1.0, /*delay*/0, /*dur*/200);
+				red_->do_animation({red_in_fn});
+				auto* red_out_fn = new FadeFn(/*from*/1.0, /*to*/0.0, /*delay*/0, /*dur*/200);
+				red_->do_animation({red_out_fn});
+
+				auto* final_on_fn = new FadeFn(/*from*/0.0, /*to*/1.0, /*delay*/400, /*dur*/300);
+				to_turn_on->do_animation({final_on_fn});
 			} else if (new_aspect == SignalHead_Aspect::Red) {
-				// Red does a bouncy thing when we get there.
+				green_->do_animation({simple_off()});
+				amber_->do_animation({simple_off()});
+				AnimationFunction* initial_red_in = NewFadeOnAnimation();
+				red_->do_animation({
+					initial_red_in,
+					NewFadeOffAnimation(/*delay_ms=*/0,
+							            /*duration_ms=*/300),
+					NewFadeOnAnimation(/*delay_ms=*/0,
+										/*duration_ms=*/150)});
 			} else {
 				// Just do a normal incandescent transition.
-				red_->do_animation({FADE_OFF_ANIMATION});
+				red_->do_animation({simple_off()});
 				if (new_aspect == SignalHead_Aspect::Green) {
-					green_->do_animation({FADE_ON_ANIMATION});
-					amber_->do_animation({FADE_OFF_ANIMATION});
+					green_->do_animation({simple_on()});
+					amber_->do_animation({simple_off()});
 				} else {
-					green_->do_animation({FADE_OFF_ANIMATION});
-					amber_->do_animation({FADE_ON_ANIMATION});
+					green_->do_animation({simple_off()});
+					amber_->do_animation({simple_on()});
 				}
 			}
 		}

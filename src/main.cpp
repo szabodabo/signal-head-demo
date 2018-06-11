@@ -14,7 +14,7 @@ static void User_Btn_Timer_Init();
 static void AnimationStepTimerInit();
 
 #define BTN_PRESSED_THRESHOLD_PERIODS 15  // 1.5 seconds
-#define ASPECT_ROTATE_PERIODS 25  // 2.5 seconds
+#define ASPECT_ROTATE_PERIODS 40  // 4 seconds
 
 volatile int BTN_PRESSED_NUM_PERIODS = 0;
 volatile int NUM_PERIODS_SINCE_LAST_ROTATE = 0;
@@ -26,7 +26,7 @@ static AnimatedLED* LED_C3 = new AnimatedLED(GPIOC, GPIO_PIN_3);
 static std::vector<SignalHead>* HEADS = new std::vector<SignalHead>{
 		SignalHead(LED_C0, LED_C1, LED_C3)};
 
-volatile LampStyle CURRENT_STYLE = LampStyle::LED;
+volatile LampStyle CURRENT_STYLE = LampStyle::SEARCHLIGHT;
 
 // NOTE: Any function that overrides a "weak" HAL fn
 // must be 'extern "C"' to ensure name lookup works correctly.
