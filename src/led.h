@@ -46,7 +46,9 @@ public:
 	}
 
 protected:
-	bool is_on() { return on_; }
+	bool is_on() {
+		return on_;
+	}
 
 private:
 	/*global*/
@@ -79,13 +81,14 @@ class FadeFn: public AnimationFunction {
 public:
 	FadeFn(bool onward) :
 			onward_(onward) {
+		if (onward_) {
+			delay_msec_ = total_duration_msec_ * (0.66f);
+		}
 	}
 	float get_value(float msec) const override {
-		// .5 second fade; on is delayed by .25 seconds
-		float left_offset_msec = onward_ ? 250 : 0;
-		msec = std::max(0.0f, msec - left_offset_msec);
+		msec = std::max(0.0f, msec - delay_msec_);
 
-		float frac = std::min(msec / 500, 1.0f);
+		float frac = std::min(msec / total_duration_msec_, 1.0f);
 		if (onward_) {
 			return frac;
 		} else {
@@ -94,6 +97,8 @@ public:
 	}
 private:
 	bool onward_ = true;
+	float delay_msec_ = 0;
+	float total_duration_msec_ = 300;
 };
 
 static SquareFunction* LED_ON_ANIMATION = new SquareFunction(
@@ -200,6 +205,42 @@ public:
 		set_aspect(aspect);
 	}
 
+	void rotate_aspect() {
+		static std::map<SignalHead_Aspect, SignalHead_Aspect> map = {
+				std::make_pair(SignalHead_Aspect::Green,
+						SignalHead_Aspect::Red), std::make_pair(
+						SignalHead_Aspect::Red, SignalHead_Aspect::Amber),
+				std::make_pair(SignalHead_Aspect::Amber,
+						SignalHead_Aspect::Green), };
+		set_aspect(map.at(aspect_));
+	}
+
+	void set_style(LampStyle style) {
+		for (AnimatedLED* led : { green_, amber_, red_ }) {
+			led->setStyle(style);
+		}
+	}
+
+	void compute_and_update_pwm_state() {
+		for (AnimatedLED* led : { green_, amber_, red_ }) {
+			led->compute_pwm_state();
+			led->update_state();
+		}
+	}
+
+	void compute_animation_state() {
+		for (AnimatedLED* led : { green_, amber_, red_ }) {
+			led->compute_animation_state();
+		}
+	}
+
+	void init() {
+		for (AnimatedLED* led : { green_, amber_, red_ }) {
+			led->init();
+		}
+	}
+
+private:
 	void set_aspect(SignalHead_Aspect aspect) {
 		aspect_ = aspect;
 
@@ -216,6 +257,7 @@ public:
 			break;
 		case SignalHead_Aspect::Red:
 		default:
+			// TODO: Bounce a bit
 			red_->animate_on();
 			green_->animate_off();
 			amber_->animate_off();
@@ -223,43 +265,6 @@ public:
 		}
 	}
 
-	void rotate_aspect() {
-		static std::map<SignalHead_Aspect, SignalHead_Aspect> map = {
-			std::make_pair(SignalHead_Aspect::Green, SignalHead_Aspect::Red),
-			std::make_pair(SignalHead_Aspect::Red, SignalHead_Aspect::Amber),
-			std::make_pair(SignalHead_Aspect::Amber, SignalHead_Aspect::Green),
-		};
-		set_aspect(map.at(aspect_));
-	}
-
-	void set_style(LampStyle style) {
-		for (AnimatedLED* led : {green_, amber_, red_}) {
-			led->setStyle(style);
-		}
-	}
-
-	void compute_and_update_pwm_state() {
-		for (AnimatedLED* led : {green_, amber_, red_}) {
-			led->compute_pwm_state();
-			led->update_state();
-		}
-	}
-
-	void compute_animation_state() {
-		for (AnimatedLED* led : {green_, amber_, red_}) {
-			led->compute_animation_state();
-		}
-	}
-
-	void init() {
-		for (AnimatedLED* led : {green_, amber_, red_}) {
-			led->init();
-		}
-	}
-
-
-
-private:
 	AnimatedLED* green_;
 	AnimatedLED* amber_;
 	AnimatedLED* red_;
