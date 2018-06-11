@@ -96,16 +96,11 @@ private:
 
 class FadeFn: public AnimationFunction {
 public:
-	FadeFn(float from_frac, float to_frac, float additional_delay_msec = 0, float duration_msec = 300) :
+	FadeFn(float from_frac, float to_frac, float delay_msec = 0, float duration_msec = 300) :
 			from_frac_(from_frac), to_frac_(to_frac),
-			delay_msec_(additional_delay_msec),
-			total_duration_msec_(duration_msec + additional_delay_msec) {
+			delay_msec_(delay_msec),
+			total_duration_msec_(duration_msec + delay_msec) {
 		onward_ = to_frac > from_frac;
-		if (onward_ && additional_delay_msec == 0) {  // hack: pls fix
-			float special_on_delay = total_duration_msec_ * (0.66f);
-			delay_msec_ += special_on_delay;
-			total_duration_msec_ += special_on_delay;
-		}
 	}
 
 	float get_value(float msec_elapsed, float current_brightness_frac) const
@@ -147,10 +142,15 @@ SquareFunction* NewLEDOffAnimation() {
 	return new SquareFunction(/*is_onward=*/false);
 }
 
-FadeFn* NewFadeOffAnimation(float delay_ms = 0, float duration_ms = 300) {
+#define DEFAULT_FADE_IN_DELAY_MSEC 600
+#define DEFAULT_FADE_DURATION_MSEC 400
+
+FadeFn* NewFadeOffAnimation(float delay_ms = 0,
+		 	 	 	 	 	float duration_ms = DEFAULT_FADE_DURATION_MSEC) {
 	return new FadeFn(1.0, 0.0, delay_ms, duration_ms);
 }
-FadeFn* NewFadeOnAnimation(float delay_ms = 0, float duration_ms = 300) {
+FadeFn* NewFadeOnAnimation(float delay_ms = DEFAULT_FADE_IN_DELAY_MSEC,
+		                   float duration_ms = DEFAULT_FADE_DURATION_MSEC) {
 	return new FadeFn(0.0, 1.0, delay_ms, duration_ms);
 }
 
@@ -287,18 +287,18 @@ private:
 		if (aspect_ == new_aspect) { return; }
 
 		if (style_ != LampStyle::SEARCHLIGHT) {
+			AnimatedLED* on_lamp = red_;
 			if (new_aspect == SignalHead_Aspect::Green) {
-				green_->do_animation({simple_on()});
-				amber_->do_animation({simple_off()});
-				red_->do_animation({simple_off()});
+				on_lamp = green_;
 			} else if (new_aspect == SignalHead_Aspect::Amber) {
-				green_->do_animation({simple_off()});
-				amber_->do_animation({simple_on()});
-				red_->do_animation({simple_off()});
-			} else {
-				green_->do_animation({simple_off()});
-				amber_->do_animation({simple_off()});
-				red_->do_animation({simple_on()});
+				on_lamp = amber_;
+			}
+			for (auto* led : {green_, amber_, red_}) {
+				if (led == on_lamp) {
+					led->do_animation({simple_on()});
+				} else {
+					led->do_animation({simple_off()});
+				}
 			}
 		} else {
 			if (aspect_ != SignalHead_Aspect::Red
@@ -315,24 +315,34 @@ private:
 				}
 				to_turn_off->do_animation({simple_off()});
 
-				// TODO: simple_on/off?
-				auto* red_in_fn = new FadeFn(/*from*/0.0, /*to*/1.0, /*delay*/0, /*dur*/200);
+				auto* red_in_fn = NewFadeOnAnimation();
 				red_->do_animation({red_in_fn});
-				auto* red_out_fn = new FadeFn(/*from*/1.0, /*to*/0.0, /*delay*/0, /*dur*/200);
+				auto* red_out_fn = NewFadeOffAnimation();
 				red_->do_animation({red_out_fn});
 
-				auto* final_on_fn = new FadeFn(/*from*/0.0, /*to*/1.0, /*delay*/400, /*dur*/300);
+				float final_delay_msec =
+						red_in_fn->get_total_duration()
+						+ red_out_fn->get_total_duration()
+						+ DEFAULT_FADE_IN_DELAY_MSEC/2.0;
+
+				auto* final_on_fn = new FadeFn(/*from*/0.0, /*to*/1.0,
+						                       final_delay_msec, /*dur*/DEFAULT_FADE_DURATION_MSEC);
 				to_turn_on->do_animation({final_on_fn});
 			} else if (new_aspect == SignalHead_Aspect::Red) {
 				green_->do_animation({simple_off()});
 				amber_->do_animation({simple_off()});
 				AnimationFunction* initial_red_in = NewFadeOnAnimation();
+				static float first_dip_to_frac = 0.1;
+				static float first_dip_dur_ms = DEFAULT_FADE_DURATION_MSEC*1.5;
+				static float second_dip_to_frac = 0.2;
+				static float second_dip_dur_ms = first_dip_dur_ms * 0.7;
 				red_->do_animation({
 					initial_red_in,
-					NewFadeOffAnimation(/*delay_ms=*/0,
-							            /*duration_ms=*/300),
-					NewFadeOnAnimation(/*delay_ms=*/0,
-										/*duration_ms=*/150)});
+					new FadeFn(/*from*/1.0, first_dip_to_frac, /*delay*/0, first_dip_dur_ms*.5),
+					new FadeFn(first_dip_to_frac, /*to*/1.0, /*delay*/0, first_dip_dur_ms),
+					new FadeFn(/*from*/1.0, second_dip_to_frac, /*delay*/0, second_dip_dur_ms*.5),
+					new FadeFn(second_dip_to_frac, /*to*/1.0, /*delay*/0, second_dip_dur_ms),
+				});
 			} else {
 				// Just do a normal incandescent transition.
 				red_->do_animation({simple_off()});

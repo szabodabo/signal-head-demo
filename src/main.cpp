@@ -14,7 +14,7 @@ static void User_Btn_Timer_Init();
 static void AnimationStepTimerInit();
 
 #define BTN_PRESSED_THRESHOLD_PERIODS 15  // 1.5 seconds
-#define ASPECT_ROTATE_PERIODS 40  // 4 seconds
+#define ASPECT_ROTATE_PERIODS 50  // 5 seconds
 
 volatile int BTN_PRESSED_NUM_PERIODS = 0;
 volatile int NUM_PERIODS_SINCE_LAST_ROTATE = 0;
