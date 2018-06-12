@@ -26,7 +26,7 @@ public:
 		GPIO_InitStructure.Pin = gpio_pin_;
 		GPIO_InitStructure.Mode = GPIO_MODE_OUTPUT_OD;
 		GPIO_InitStructure.Pull = GPIO_NOPULL;
-		GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_MEDIUM;
+		GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_HIGH;
 		update_state();  // init off
 		HAL_GPIO_Init(gpio_port_, &GPIO_InitStructure);
 	}
@@ -39,7 +39,7 @@ public:
 		on_ = false;
 	}
 
-	void update_state() {
+	inline void update_state() {
 		HAL_GPIO_WritePin(gpio_port_, gpio_pin_,
 				on_ ? GPIO_PIN_RESET : GPIO_PIN_SET);
 	}
@@ -139,8 +139,8 @@ SquareFunction* NewLEDOffAnimation() {
 	return new SquareFunction(/*is_onward=*/false);
 }
 
-#define DEFAULT_FADE_IN_DELAY_MSEC 600
-#define DEFAULT_FADE_DURATION_MSEC 400
+#define DEFAULT_FADE_IN_DELAY_MSEC 400
+#define DEFAULT_FADE_DURATION_MSEC 300
 
 FadeFn* NewFadeOffAnimation(float delay_ms = 0,
 		 	 	 	 	 	float duration_ms = DEFAULT_FADE_DURATION_MSEC) {
@@ -158,18 +158,19 @@ public:
 			LED(gpio_port, gpio_pin) {
 	}
 
-	// 0 to 255.
-	void set_brightness_level(unsigned short brightness) {
-		brightness_ = brightness;
+	// 0 to 1.
+	void set_brightness_level(float brightness_frac) {
+		brightness_ = brightness_frac * (float) counter_total_;
 	}
 
-	unsigned short get_brightness_level() {
-		return brightness_;
+	// 0 to 1.
+	float get_brightness_level() {
+		return brightness_ / (float) counter_total_;
 	}
 
 	// Call this at PWM frequency.
-	void compute_pwm_state() {
-		if (++counter_ >= 255) {
+	inline void compute_pwm_state() {
+		if (++counter_ >= counter_total_) {
 			counter_ = 0;
 		}
 		if (counter_ < brightness_) {
@@ -180,8 +181,9 @@ public:
 	}
 
 private:
-	unsigned short brightness_ = 255;
+	unsigned short brightness_ = 0;
 	unsigned short counter_ = 0;
+	static const unsigned short counter_total_ = 300;
 };
 
 class AnimatedLED: public DimmableLED {
@@ -192,34 +194,34 @@ public:
 	}
 
 	void do_animation(std::vector<AnimationFunction*> animations) {
-		__disable_irq();
+		//__disable_irq();
 		for (auto& fn : animations) {
 			animation_queue_.push_back(std::unique_ptr<AnimationFunction>(fn));
 		}
-		__enable_irq();
+		//__enable_irq();
 	}
 
 	void compute_animation_state() {
-		__disable_irq();
+		//__disable_irq();
 		if (!animation_queue_.empty()) {
 			if (current_animation_start_tick_ == 0) {
 				// unstarted animation
 				current_animation_start_tick_ = HAL_GetTick();
 			}
 
+
 			uint32_t msec_elapsed = HAL_GetTick() - current_animation_start_tick_;
 			AnimationFunction* current_animation = animation_queue_[0].get();
-			float old_brightness_frac = (float) get_brightness_level() / 255.0;
 			float animation_fraction = current_animation->get_value(msec_elapsed,
-					old_brightness_frac);
-			set_brightness_level(animation_fraction * 255.0);
+					get_brightness_level());
+			set_brightness_level(animation_fraction);
 
 			if (current_animation->is_done(msec_elapsed)) {
 				animation_queue_.erase(animation_queue_.begin());
 				current_animation_start_tick_ = 0;
 			}
 		}
-		__enable_irq();
+		//__enable_irq();
 	}
 
 private:
@@ -253,14 +255,14 @@ public:
 		style_ = style;
 	}
 
-	void compute_and_update_pwm_state() {
+	inline void compute_and_update_pwm_state() {
 		for (AnimatedLED* led : { green_, amber_, red_ }) {
 			led->compute_pwm_state();
 			led->update_state();
 		}
 	}
 
-	void compute_animation_state() {
+	inline void compute_animation_state() {
 		for (AnimatedLED* led : { green_, amber_, red_ }) {
 			led->compute_animation_state();
 		}
@@ -306,6 +308,8 @@ private:
 				// we need to bounce via red if going from one non-red to another.
 				AnimatedLED *to_turn_off, *to_turn_on;
 
+				static float bounce_duration_msec = 100;
+
 				if (new_aspect == SignalHead_Aspect::Green) {
 					to_turn_off = amber_;
 					to_turn_on = green_;
@@ -315,15 +319,19 @@ private:
 				}
 				to_turn_off->do_animation({simple_off()});
 
-				auto* red_in_fn = NewFadeOnAnimation();
+				auto* red_in_fn = NewFadeOnAnimation(
+						/*delay_ms*/ DEFAULT_FADE_IN_DELAY_MSEC,
+						/*duration*/bounce_duration_msec);
 				red_->do_animation({red_in_fn});
-				auto* red_out_fn = NewFadeOffAnimation();
+				auto* red_out_fn = NewFadeOffAnimation(
+						/*delay_ms*/0,
+						/*duration*/bounce_duration_msec);
 				red_->do_animation({red_out_fn});
 
 				float final_delay_msec =
 						red_in_fn->get_total_duration()
 						+ red_out_fn->get_total_duration()
-						+ DEFAULT_FADE_IN_DELAY_MSEC/2.0;
+						+ bounce_duration_msec + 75;
 
 				auto* final_on_fn = new FadeFn(/*from*/0.0, /*to*/1.0,
 						                       final_delay_msec, /*dur*/DEFAULT_FADE_DURATION_MSEC);
@@ -331,16 +339,19 @@ private:
 			} else if (new_aspect == SignalHead_Aspect::Red) {
 				green_->do_animation({simple_off()});
 				amber_->do_animation({simple_off()});
-				AnimationFunction* initial_red_in = NewFadeOnAnimation();
+				AnimationFunction* initial_red_in = new FadeFn(
+						/*from*/0, /*to*/0.8,
+						/*delay*/DEFAULT_FADE_IN_DELAY_MSEC,
+						/*dur*/400 * 0.65);
 				static float first_dip_to_frac = 0.1;
-				static float first_dip_dur_ms = DEFAULT_FADE_DURATION_MSEC*1.5;
-				static float second_dip_to_frac = 0.2;
+				static float first_dip_dur_ms = 400*0.55;
+				static float second_dip_to_frac = 0.4;
 				static float second_dip_dur_ms = first_dip_dur_ms * 0.7;
 				red_->do_animation({
 					initial_red_in,
-					new FadeFn(/*from*/1.0, first_dip_to_frac, /*delay*/0, first_dip_dur_ms*.5),
-					new FadeFn(first_dip_to_frac, /*to*/1.0, /*delay*/0, first_dip_dur_ms),
-					new FadeFn(/*from*/1.0, second_dip_to_frac, /*delay*/0, second_dip_dur_ms*.5),
+					new FadeFn(/*from*/0.8, first_dip_to_frac, /*delay*/0, first_dip_dur_ms*.5),
+					new FadeFn(first_dip_to_frac, /*to*/0.9, /*delay*/0, first_dip_dur_ms),
+					new FadeFn(/*from*/0.9, second_dip_to_frac, /*delay*/0, second_dip_dur_ms*.5),
 					new FadeFn(second_dip_to_frac, /*to*/1.0, /*delay*/0, second_dip_dur_ms),
 				});
 			} else {

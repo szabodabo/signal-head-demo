@@ -19,6 +19,7 @@ static void AnimationStepTimerInit();
 volatile int BTN_PRESSED_NUM_PERIODS = 0;
 volatile int NUM_PERIODS_SINCE_LAST_ROTATE = 0;
 
+// Leftmost column on proto-board
 static AnimatedLED LED_C0(GPIOC, GPIO_PIN_0);
 static AnimatedLED LED_C1(GPIOC, GPIO_PIN_1);
 static AnimatedLED LED_C3(GPIOC, GPIO_PIN_3);
@@ -31,10 +32,36 @@ static AnimatedLED LED_C10(GPIOC, GPIO_PIN_10);
 static AnimatedLED LED_C11(GPIOC, GPIO_PIN_11);
 static AnimatedLED LED_C12(GPIOC, GPIO_PIN_12);
 
+// Center column
+
+static AnimatedLED LED_B13(GPIOB, GPIO_PIN_13);
+static AnimatedLED LED_B14(GPIOB, GPIO_PIN_14);
+static AnimatedLED LED_B15(GPIOB, GPIO_PIN_15);
+
+static AnimatedLED LED_B3(GPIOB, GPIO_PIN_3);
+static AnimatedLED LED_B4(GPIOB, GPIO_PIN_4);
+static AnimatedLED LED_B5(GPIOB, GPIO_PIN_5);
+
+static AnimatedLED LED_B11(GPIOB, GPIO_PIN_11);
+static AnimatedLED LED_B12(GPIOB, GPIO_PIN_12);
+static AnimatedLED LED_A11(GPIOA, GPIO_PIN_11);
+
+static AnimatedLED LED_C5(GPIOC, GPIO_PIN_5);
+static AnimatedLED LED_C6(GPIOC, GPIO_PIN_6);
+static AnimatedLED LED_C8(GPIOC, GPIO_PIN_8);
+
+
+// Rightmost column
+
+
 static std::vector<SignalHead>* HEADS = new std::vector<SignalHead>{
 		SignalHead(&LED_C3, &LED_C1, &LED_C0),
 		SignalHead(&LED_A1, &LED_B0, &LED_C2),
 		SignalHead(&LED_C10, &LED_C11, &LED_C12),
+		SignalHead(&LED_B13, &LED_B14, &LED_B15),
+		SignalHead(&LED_B3, &LED_B5, &LED_B4),
+		SignalHead(&LED_B11, &LED_B12, &LED_A11),
+		SignalHead(&LED_C5, &LED_C6, &LED_C8),
 };
 
 volatile LampStyle CURRENT_STYLE = LampStyle::SEARCHLIGHT;
@@ -105,20 +132,9 @@ extern "C" void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
 			RotateAspects();
 		}
 	} else if (htim->Instance == TIM7) {
-		// Called at 100kHz
-		static uint32_t counter = 0;
-		++counter;
-
+		// Called at 1kHz
 		for (SignalHead& head : *HEADS) {
-			head.compute_and_update_pwm_state();
-		}
-
-		if (counter >= 100) {
-			// every 1000 Hz
-			for (SignalHead& head : *HEADS) {
-				head.compute_animation_state();
-			}
-			counter = 0;
+			head.compute_animation_state();
 		}
 	}
 }
@@ -132,23 +148,19 @@ int main(void) {
 	MX_GPIO_Init();
 	MX_TIM1_Init();
 	MX_ADC_Init();
-	User_Btn_Timer_Init();
-	AnimationStepTimerInit();
 
 	for (SignalHead& head : *HEADS) {
 		head.init();
 		head.set_style(CURRENT_STYLE);
 	}
 
-	// Show current mode on LD2 via blink pattern
+	User_Btn_Timer_Init();
+	AnimationStepTimerInit();
+
 	while (1) {
-		for (int i = 0; i < (unsigned short) CURRENT_STYLE; i++) {
-			LD2_Set(1);
-			HAL_Delay(100);
-			LD2_Set(0);
-			HAL_Delay(100);
+		for (SignalHead& head : *HEADS) {
+			head.compute_and_update_pwm_state();
 		}
-		HAL_Delay(2000);
 	}
 }
 
@@ -268,8 +280,7 @@ static void User_Btn_Timer_Init() {
 	htim6.Instance = TIM6;
 	htim6.Init.Prescaler = 47999; // 48MHz / 48000 = 1000Hz
 	htim6.Init.Period = 99;  // 1000Hz / 100 = 10Hz = 0.1s
-	__HAL_RCC_TIM6_CLK_ENABLE()
-	;
+	__HAL_RCC_TIM6_CLK_ENABLE();
 	HAL_NVIC_SetPriority(TIM6_IRQn, 2, 0);
 	HAL_NVIC_EnableIRQ(TIM6_IRQn);
 	HAL_TIM_Base_Init(&htim6);
@@ -278,10 +289,9 @@ static void User_Btn_Timer_Init() {
 
 static void AnimationStepTimerInit() {
 	htim7.Instance = TIM7;
-	htim7.Init.Prescaler = 479; // 48MHz / 4800 = 100kHz
+	htim7.Init.Prescaler = 47999; // 48MHz / 48000 = 1kHz
 	htim7.Init.Period = 1;  // as above
-	__HAL_RCC_TIM7_CLK_ENABLE()
-	;
+	__HAL_RCC_TIM7_CLK_ENABLE();
 	HAL_NVIC_SetPriority(TIM7_IRQn, 1, 0);
 	HAL_NVIC_EnableIRQ(TIM7_IRQn);
 	HAL_TIM_Base_Init(&htim7);
