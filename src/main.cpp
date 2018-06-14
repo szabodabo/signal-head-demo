@@ -33,7 +33,6 @@ static AnimatedLED LED_C11(GPIOC, GPIO_PIN_11);
 static AnimatedLED LED_C12(GPIOC, GPIO_PIN_12);
 
 // Center column
-
 static AnimatedLED LED_B13(GPIOB, GPIO_PIN_13);
 static AnimatedLED LED_B14(GPIOB, GPIO_PIN_14);
 static AnimatedLED LED_B15(GPIOB, GPIO_PIN_15);
@@ -46,23 +45,35 @@ static AnimatedLED LED_B11(GPIOB, GPIO_PIN_11);
 static AnimatedLED LED_B12(GPIOB, GPIO_PIN_12);
 static AnimatedLED LED_A11(GPIOA, GPIO_PIN_11);
 
+// Rightmost column
 static AnimatedLED LED_C5(GPIOC, GPIO_PIN_5);
 static AnimatedLED LED_C6(GPIOC, GPIO_PIN_6);
 static AnimatedLED LED_C8(GPIOC, GPIO_PIN_8);
 
+static AnimatedLED LED_A9(GPIOA, GPIO_PIN_9);
+static AnimatedLED LED_A8(GPIOA, GPIO_PIN_8);
+static AnimatedLED LED_B10(GPIOB, GPIO_PIN_10);
 
-// Rightmost column
 
-
-static std::vector<SignalHead>* HEADS = new std::vector<SignalHead>{
-		SignalHead(&LED_C3, &LED_C1, &LED_C0),
-		SignalHead(&LED_A1, &LED_B0, &LED_C2),
-		SignalHead(&LED_C10, &LED_C11, &LED_C12),
-		SignalHead(&LED_B13, &LED_B14, &LED_B15),
-		SignalHead(&LED_B3, &LED_B5, &LED_B4),
-		SignalHead(&LED_B11, &LED_B12, &LED_A11),
-		SignalHead(&LED_C5, &LED_C6, &LED_C8),
+static std::vector<SignalHead>* TRILIGHT_HEADS = new std::vector<SignalHead>{
+	SignalHead(&LED_C3, &LED_C1, &LED_C0),
+	SignalHead(&LED_A1, &LED_B0, &LED_C2),
+	SignalHead(&LED_C10, &LED_C11, &LED_C12),
 };
+
+static std::vector<SignalHead>* SEARCHLIGHT_HEADS = new std::vector<SignalHead>{
+	SignalHead(&LED_B13, &LED_B14, &LED_B15),
+	SignalHead(&LED_B3, &LED_B5, &LED_B4),
+	SignalHead(&LED_B11, &LED_B12, &LED_A11),
+};
+
+static std::vector<SignalHead>* CPL_HEADS = new std::vector<SignalHead>{
+	SignalHead(&LED_C5, &LED_C6, &LED_C8),
+	SignalHead(&LED_A9, &LED_A8, &LED_B10),
+};
+
+static std::vector<SignalHead*>* ALL_HEADS = new std::vector<SignalHead*>();
+
 
 volatile LampStyle CURRENT_STYLE = LampStyle::SEARCHLIGHT;
 
@@ -77,9 +88,19 @@ extern "C" void TIM7_IRQHandler() {
 	HAL_TIM_IRQHandler(&htim7);
 }
 
-static inline void LD2_Set(short state) {
+static inline void LD2_Set(bool state) {
 	HAL_GPIO_WritePin(ld2_GPIO_Port, ld2_Pin,
 			state ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
+
+static std::vector<SignalHead*> AllSignalHeads() {
+	std::vector<SignalHead*> heads;
+	for (std::vector<SignalHead>* vec : {TRILIGHT_HEADS, SEARCHLIGHT_HEADS, CPL_HEADS}) {
+		for (SignalHead& head : *vec) {
+			heads.push_back(&head);
+		}
+	}
+	return heads;
 }
 
 void RotateLampStyleMode() {
@@ -95,14 +116,14 @@ void RotateLampStyleMode() {
 		break;
 	}
 
-	for (SignalHead& head : *HEADS) {
-		head.set_style(CURRENT_STYLE);
+	for (SignalHead* head : *ALL_HEADS) {
+		head->set_style(CURRENT_STYLE);
 	}
 }
 
 void RotateAspects() {
-	for (SignalHead& head : *HEADS) {
-		head.rotate_aspect();
+	for (SignalHead* head : *ALL_HEADS) {
+		head->rotate_aspect();
 	}
 }
 
@@ -133,8 +154,8 @@ extern "C" void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
 		}
 	} else if (htim->Instance == TIM7) {
 		// Called at 1kHz
-		for (SignalHead& head : *HEADS) {
-			head.compute_animation_state();
+		for (SignalHead* head : *ALL_HEADS) {
+			head->compute_animation_state();
 		}
 	}
 }
@@ -149,17 +170,22 @@ int main(void) {
 	MX_TIM1_Init();
 	MX_ADC_Init();
 
-	for (SignalHead& head : *HEADS) {
-		head.init();
-		head.set_style(CURRENT_STYLE);
+	for (SignalHead* head : AllSignalHeads()) {
+		ALL_HEADS->push_back(head);
+	}
+
+
+	for (SignalHead* head : *ALL_HEADS) {
+		head->init();
+		head->set_style(CURRENT_STYLE);
 	}
 
 	User_Btn_Timer_Init();
 	AnimationStepTimerInit();
 
 	while (1) {
-		for (SignalHead& head : *HEADS) {
-			head.compute_and_update_pwm_state();
+		for (SignalHead* head : *ALL_HEADS) {
+			head->compute_and_update_pwm_state();
 		}
 	}
 }
