@@ -13,11 +13,8 @@ static void MX_ADC_Init(void);
 static void User_Btn_Timer_Init();
 static void AnimationStepTimerInit();
 
-#define BTN_PRESSED_THRESHOLD_PERIODS 15  // 1.5 seconds
 #define ASPECT_ROTATE_PERIODS 50  // 5 seconds
-
-volatile int BTN_PRESSED_NUM_PERIODS = 0;
-volatile int NUM_PERIODS_SINCE_LAST_ROTATE = 0;
+volatile int NUM_PERIODS_SINCE_LAST_ASPECT_ROTATE = 0;
 
 // Leftmost column on proto-board
 static AnimatedLED LED_C0(GPIOC, GPIO_PIN_0);
@@ -62,20 +59,17 @@ static std::vector<SignalHead>* TRILIGHT_HEADS = new std::vector<SignalHead>{
 };
 
 static std::vector<SignalHead>* SEARCHLIGHT_HEADS = new std::vector<SignalHead>{
-	SignalHead(&LED_B13, &LED_B14, &LED_B15),
-	SignalHead(&LED_B3, &LED_B5, &LED_B4),
+	SignalHead(&LED_C5, &LED_C6, &LED_C8),
 	SignalHead(&LED_B11, &LED_B12, &LED_A11),
+	SignalHead(&LED_B3, &LED_B5, &LED_B4),
 };
 
 static std::vector<SignalHead>* CPL_HEADS = new std::vector<SignalHead>{
-	SignalHead(&LED_C5, &LED_C6, &LED_C8),
 	SignalHead(&LED_A9, &LED_A8, &LED_B10),
+	SignalHead(&LED_B13, &LED_B14, &LED_B15),
 };
 
 static std::vector<SignalHead*>* ALL_HEADS = new std::vector<SignalHead*>();
-
-
-volatile LampStyle CURRENT_STYLE = LampStyle::SEARCHLIGHT;
 
 // NOTE: Any function that overrides a "weak" HAL fn
 // must be 'extern "C"' to ensure name lookup works correctly.
@@ -103,21 +97,15 @@ static std::vector<SignalHead*> AllSignalHeads() {
 	return heads;
 }
 
-void RotateLampStyleMode() {
-	switch (CURRENT_STYLE) {
-	case LampStyle::LED:
-		CURRENT_STYLE = LampStyle::INCANDESCENT;
-		break;
-	case LampStyle::INCANDESCENT:
-		CURRENT_STYLE = LampStyle::SEARCHLIGHT;
-		break;
-	default:
-		CURRENT_STYLE = LampStyle::LED;
-		break;
+void SetLampLEDMode(bool led_only) {
+	for (SignalHead& head : *TRILIGHT_HEADS) {
+		head.set_style(led_only ? LampStyle::LED : LampStyle::INCANDESCENT);
 	}
-
-	for (SignalHead* head : *ALL_HEADS) {
-		head->set_style(CURRENT_STYLE);
+	for (SignalHead& head : *SEARCHLIGHT_HEADS) {
+		head.set_style(led_only ? LampStyle::LED : LampStyle::SEARCHLIGHT);
+	}
+	for (SignalHead& head : *CPL_HEADS) {
+		head.set_style(led_only ? LampStyle::LED : LampStyle::INCANDESCENT);
 	}
 }
 
@@ -129,27 +117,8 @@ void RotateAspects() {
 
 extern "C" void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
 	if (htim->Instance == TIM6) {
-		if (HAL_GPIO_ReadPin(user_btn_GPIO_Port, user_btn_Pin)
-				== GPIO_PIN_RESET) {
-			// button is pressed
-			BTN_PRESSED_NUM_PERIODS++;
-
-			if (BTN_PRESSED_NUM_PERIODS > BTN_PRESSED_THRESHOLD_PERIODS) {
-				RotateLampStyleMode();
-				// restart count (and give buffer time) to avoid one rotation per
-				// timer period while button is held over threshold.
-				BTN_PRESSED_NUM_PERIODS = -BTN_PRESSED_THRESHOLD_PERIODS;
-			} else if (BTN_PRESSED_NUM_PERIODS < 0) {
-				HAL_GPIO_TogglePin(ld2_GPIO_Port, ld2_Pin);
-			}
-		} else {
-			// button is released
-			BTN_PRESSED_NUM_PERIODS = 0;
-			LD2_Set(0);
-		}
-
-		if (NUM_PERIODS_SINCE_LAST_ROTATE++ > ASPECT_ROTATE_PERIODS) {
-			NUM_PERIODS_SINCE_LAST_ROTATE = 0;
+		if (NUM_PERIODS_SINCE_LAST_ASPECT_ROTATE++ > ASPECT_ROTATE_PERIODS) {
+			NUM_PERIODS_SINCE_LAST_ASPECT_ROTATE = 0;
 			RotateAspects();
 		}
 	} else if (htim->Instance == TIM7) {
@@ -171,14 +140,11 @@ int main(void) {
 	MX_ADC_Init();
 
 	for (SignalHead* head : AllSignalHeads()) {
+		head->init();
 		ALL_HEADS->push_back(head);
 	}
 
-
-	for (SignalHead* head : *ALL_HEADS) {
-		head->init();
-		head->set_style(CURRENT_STYLE);
-	}
+	SetLampLEDMode(false);
 
 	User_Btn_Timer_Init();
 	AnimationStepTimerInit();
