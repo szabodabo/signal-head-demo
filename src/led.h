@@ -231,24 +231,15 @@ private:
 
 enum class SignalHead_Aspect {
 	Red, Amber, Green,
+	None,
+	Lunar, Upper, Lunar_Upper, Lower,
 };
 
 class SignalHead {
 public:
 	SignalHead(AnimatedLED* red, AnimatedLED* amber, AnimatedLED* green,
-			SignalHead_Aspect aspect = SignalHead_Aspect::Red,
 			LampStyle style = LampStyle::SEARCHLIGHT) :
 			green_(green), amber_(amber), red_(red), style_(style) {
-	}
-
-	void rotate_aspect() {
-		static std::map<SignalHead_Aspect, SignalHead_Aspect> map = {
-				std::make_pair(SignalHead_Aspect::Green,
-						SignalHead_Aspect::Red), std::make_pair(
-						SignalHead_Aspect::Red, SignalHead_Aspect::Amber),
-				std::make_pair(SignalHead_Aspect::Amber,
-						SignalHead_Aspect::Green), };
-		set_aspect(map.at(aspect_));
 	}
 
 	void set_style(LampStyle style) {
@@ -275,7 +266,8 @@ public:
 		set_aspect(SignalHead_Aspect::Red);
 	}
 
-private:
+	SignalHead_Aspect get_aspect() const { return aspect_; }
+
 	void set_aspect(SignalHead_Aspect new_aspect) {
 		std::function<AnimationFunction*()> simple_on, simple_off;
 		if (style_ == LampStyle::LED) {
@@ -288,15 +280,32 @@ private:
 
 		if (aspect_ == new_aspect) { return; }
 
+		if (new_aspect == SignalHead_Aspect::None) {
+			for (auto* led : {green_, amber_, red_}) {
+				led->do_animation({simple_off()});
+			}
+			return;
+		}
+
 		if (style_ != LampStyle::SEARCHLIGHT) {
-			AnimatedLED* on_lamp = red_;
+			std::vector<AnimatedLED*> on_lamps = {red_};
 			if (new_aspect == SignalHead_Aspect::Green) {
-				on_lamp = green_;
+				on_lamps = {green_};
 			} else if (new_aspect == SignalHead_Aspect::Amber) {
-				on_lamp = amber_;
+				on_lamps = {amber_};
+			} else if (new_aspect == SignalHead_Aspect::None) {
+				on_lamps.clear();
+			} else if (new_aspect == SignalHead_Aspect::Lunar) {
+				on_lamps = {amber_};
+			} else if (new_aspect == SignalHead_Aspect::Lunar_Upper) {
+				on_lamps = {amber_, red_};
+			} else if (new_aspect == SignalHead_Aspect::Lower) {
+				on_lamps = {green_};
+			} else if (new_aspect == SignalHead_Aspect::Upper) {
+				on_lamps = {red_};
 			}
 			for (auto* led : {green_, amber_, red_}) {
-				if (led == on_lamp) {
+				if (std::find(on_lamps.begin(), on_lamps.end(), led) != on_lamps.end()) {
 					led->do_animation({simple_on()});
 				} else {
 					led->do_animation({simple_off()});
@@ -334,7 +343,7 @@ private:
 						+ bounce_duration_msec + 75;
 
 				auto* final_on_fn = new FadeFn(/*from*/0.0, /*to*/1.0,
-						                       final_delay_msec, /*dur*/DEFAULT_FADE_DURATION_MSEC);
+											   final_delay_msec, /*dur*/DEFAULT_FADE_DURATION_MSEC);
 				to_turn_on->do_animation({final_on_fn});
 			} else if (new_aspect == SignalHead_Aspect::Red) {
 				green_->do_animation({simple_off()});
@@ -370,11 +379,62 @@ private:
 		aspect_ = new_aspect;
 	}
 
+private:
 	AnimatedLED* green_;
 	AnimatedLED* amber_;
 	AnimatedLED* red_;
 	SignalHead_Aspect aspect_;
 	LampStyle style_;
+};
+
+class SignalMast {
+public:
+	virtual void rotate_aspect() = 0;
+};
+
+class SingleOutputMast : public SignalMast {
+public:
+	SingleOutputMast(SignalHead* head) : head_(head) {}
+
+	void rotate_aspect() override {
+		static std::map<SignalHead_Aspect, SignalHead_Aspect> map = {
+			std::make_pair(SignalHead_Aspect::Green, SignalHead_Aspect::Red),
+			std::make_pair(SignalHead_Aspect::Red, SignalHead_Aspect::Amber),
+			std::make_pair(SignalHead_Aspect::Amber,SignalHead_Aspect::Green),
+		};
+
+		head_->set_aspect(map.at(head_->get_aspect()));
+	}
+private:
+	SignalHead* head_;
+};
+
+class DoubleOutputMast : public SignalMast {
+public:
+	DoubleOutputMast(SignalHead* upper, SignalHead* lower,
+		std::vector<std::pair<SignalHead_Aspect, SignalHead_Aspect>>* aspects)
+ 	 	 	 : upper_(upper), lower_(lower), aspects_(aspects) {
+	}
+
+	void rotate_aspect() override {
+		++current_aspect_;
+		if (current_aspect_ >= aspects_->size()) {
+			current_aspect_ = 0;
+		}
+		set_current_aspect();
+	}
+
+private:
+	void set_current_aspect() {
+		auto& aspect_pair = (*aspects_)[current_aspect_];
+		upper_->set_aspect(aspect_pair.first);
+		lower_->set_aspect(aspect_pair.second);
+	}
+
+	SignalHead* upper_;
+	SignalHead* lower_;
+	uint8_t current_aspect_ = 0;
+	std::vector<std::pair<SignalHead_Aspect, SignalHead_Aspect>>* aspects_;
 };
 
 #endif /* LED_H_ */

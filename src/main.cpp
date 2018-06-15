@@ -52,21 +52,21 @@ static AnimatedLED LED_A8(GPIOA, GPIO_PIN_8);
 static AnimatedLED LED_B10(GPIOB, GPIO_PIN_10);
 
 
-static std::vector<SignalHead>* TRILIGHT_HEADS = new std::vector<SignalHead>{
-	SignalHead(&LED_C3, &LED_C1, &LED_C0),
-	SignalHead(&LED_A1, &LED_B0, &LED_C2),
-	SignalHead(&LED_C10, &LED_C11, &LED_C12),
+static std::vector<SignalHead>* COL_A_HEADS = new std::vector<SignalHead>{
+	SignalHead(&LED_C3, &LED_C1, &LED_C0, LampStyle::INCANDESCENT),
+	SignalHead(&LED_A1, &LED_B0, &LED_C2, LampStyle::LED),
+	SignalHead(&LED_C10, &LED_C11, &LED_C12, LampStyle::SEARCHLIGHT),
 };
 
-static std::vector<SignalHead>* SEARCHLIGHT_HEADS = new std::vector<SignalHead>{
-	SignalHead(&LED_C5, &LED_C6, &LED_C8),
-	SignalHead(&LED_B11, &LED_B12, &LED_A11),
-	SignalHead(&LED_B3, &LED_B5, &LED_B4),
+static std::vector<SignalHead>* COL_B_HEADS = new std::vector<SignalHead>{
+	SignalHead(&LED_C5, &LED_C6, &LED_C8, LampStyle::SEARCHLIGHT),
+	SignalHead(&LED_B11, &LED_B12, &LED_A11, LampStyle::SEARCHLIGHT),  // upper
+	SignalHead(&LED_B3, &LED_B5, &LED_B4, LampStyle::SEARCHLIGHT),  // lower
 };
 
-static std::vector<SignalHead>* CPL_HEADS = new std::vector<SignalHead>{
-	SignalHead(&LED_A9, &LED_A8, &LED_B10),
-	SignalHead(&LED_B13, &LED_B14, &LED_B15),
+static std::vector<SignalHead>* COL_C_HEADS = new std::vector<SignalHead>{
+	SignalHead(&LED_A9, &LED_A8, &LED_B10, LampStyle::INCANDESCENT),
+	SignalHead(&LED_B13, &LED_B14, &LED_B15, LampStyle::INCANDESCENT),
 };
 
 static std::vector<SignalHead*>* ALL_HEADS = new std::vector<SignalHead*>();
@@ -89,7 +89,7 @@ static inline void LD2_Set(bool state) {
 
 static std::vector<SignalHead*> AllSignalHeads() {
 	std::vector<SignalHead*> heads;
-	for (std::vector<SignalHead>* vec : {TRILIGHT_HEADS, SEARCHLIGHT_HEADS, CPL_HEADS}) {
+	for (std::vector<SignalHead>* vec : {COL_A_HEADS, COL_B_HEADS, COL_C_HEADS}) {
 		for (SignalHead& head : *vec) {
 			heads.push_back(&head);
 		}
@@ -97,21 +97,39 @@ static std::vector<SignalHead*> AllSignalHeads() {
 	return heads;
 }
 
-void SetLampLEDMode(bool led_only) {
-	for (SignalHead& head : *TRILIGHT_HEADS) {
-		head.set_style(led_only ? LampStyle::LED : LampStyle::INCANDESCENT);
-	}
-	for (SignalHead& head : *SEARCHLIGHT_HEADS) {
-		head.set_style(led_only ? LampStyle::LED : LampStyle::SEARCHLIGHT);
-	}
-	for (SignalHead& head : *CPL_HEADS) {
-		head.set_style(led_only ? LampStyle::LED : LampStyle::INCANDESCENT);
-	}
-}
+static std::vector<std::pair<SignalHead_Aspect, SignalHead_Aspect>> SEARCHLIGHT_ASPECTS {
+	std::make_pair(SignalHead_Aspect::Green, SignalHead_Aspect::Red),
+	std::make_pair(SignalHead_Aspect::Red, SignalHead_Aspect::Red),
+	std::make_pair(SignalHead_Aspect::Amber, SignalHead_Aspect::Red),
+	std::make_pair(SignalHead_Aspect::Amber, SignalHead_Aspect::Amber),
+	std::make_pair(SignalHead_Aspect::Red, SignalHead_Aspect::Green),
+	std::make_pair(SignalHead_Aspect::Red, SignalHead_Aspect::Amber),
+};
+
+static std::vector<std::pair<SignalHead_Aspect, SignalHead_Aspect>> CPL_ASPECTS {
+	std::make_pair(SignalHead_Aspect::Red, SignalHead_Aspect::None),
+	std::make_pair(SignalHead_Aspect::None, SignalHead_Aspect::Lunar),
+	std::make_pair(SignalHead_Aspect::None, SignalHead_Aspect::Lunar_Upper),
+	std::make_pair(SignalHead_Aspect::Amber, SignalHead_Aspect::None),
+	std::make_pair(SignalHead_Aspect::Amber, SignalHead_Aspect::Lower),
+	std::make_pair(SignalHead_Aspect::Amber, SignalHead_Aspect::Upper),
+	std::make_pair(SignalHead_Aspect::Green, SignalHead_Aspect::None),
+	std::make_pair(SignalHead_Aspect::Green, SignalHead_Aspect::Lower),
+	std::make_pair(SignalHead_Aspect::Green, SignalHead_Aspect::Upper),
+};
+
+static std::vector<SignalMast*> SIGNAL_MASTS {
+	new SingleOutputMast(&(*COL_A_HEADS)[0]),
+	new SingleOutputMast(&(*COL_A_HEADS)[1]),
+	new SingleOutputMast(&(*COL_A_HEADS)[2]),
+	new SingleOutputMast(&(*COL_B_HEADS)[0]),
+	new DoubleOutputMast(&(*COL_B_HEADS)[1], &(*COL_B_HEADS)[2], &SEARCHLIGHT_ASPECTS),
+	new DoubleOutputMast(&(*COL_C_HEADS)[0], &(*COL_C_HEADS)[1], &CPL_ASPECTS),
+};
 
 void RotateAspects() {
-	for (SignalHead* head : *ALL_HEADS) {
-		head->rotate_aspect();
+	for (SignalMast* mast : SIGNAL_MASTS) {
+		mast->rotate_aspect();
 	}
 }
 
@@ -143,8 +161,6 @@ int main(void) {
 		head->init();
 		ALL_HEADS->push_back(head);
 	}
-
-	SetLampLEDMode(false);
 
 	User_Btn_Timer_Init();
 	AnimationStepTimerInit();
