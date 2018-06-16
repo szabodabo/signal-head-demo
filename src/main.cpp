@@ -108,8 +108,8 @@ static std::vector<std::pair<SignalHead_Aspect, SignalHead_Aspect>> SEARCHLIGHT_
 
 static std::vector<std::pair<SignalHead_Aspect, SignalHead_Aspect>> CPL_ASPECTS {
 	std::make_pair(SignalHead_Aspect::Red, SignalHead_Aspect::None),
-	std::make_pair(SignalHead_Aspect::None, SignalHead_Aspect::Lunar),
-	std::make_pair(SignalHead_Aspect::None, SignalHead_Aspect::Lunar_Upper),
+	//std::make_pair(SignalHead_Aspect::None, SignalHead_Aspect::Lunar),
+	//std::make_pair(SignalHead_Aspect::None, SignalHead_Aspect::Lunar_Upper),
 	std::make_pair(SignalHead_Aspect::Amber, SignalHead_Aspect::None),
 	std::make_pair(SignalHead_Aspect::Amber, SignalHead_Aspect::Lower),
 	std::make_pair(SignalHead_Aspect::Amber, SignalHead_Aspect::Upper),
